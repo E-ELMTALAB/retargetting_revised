@@ -1,0 +1,12 @@
+name = "retargetting-platform"
+compatibility_date = "2024-06-01"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "retargetting"
+
+[vars]
+D1_ENDPOINT = "${DB.url}"
+D1_TOKEN = "${DB.auth_token}"
+JWT_SECRET = "changeme"
+SESSION_SECRET = "sessionsecret"
