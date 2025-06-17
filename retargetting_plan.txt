@@ -1,0 +1,190 @@
+read this document and only say understood . 
+"
+Here's a comprehensive plain-text description of your system for developers:
+
+---
+
+### **System Overview**  
+A Telegram retargeting platform where you can connect your Telegram account and run retargeting campaigns to send ads to users who previously messaged your support channel. The system handles Telegram API rate limits and provides analytics. The architecture is designed to be modular, allowing for future multi-tenant expansion.
+
+---
+
+### **Core Requirements**  
+1. **User Management**  
+   - Currently single-user focused, but designed with account_id in data model for future multi-tenant support.
+   - Database queries and storage keys include `account_id` for future-proofing.
+
+2. **Telegram Integration**  
+   - You provide your Telegram account credentials.
+   - Sessions are stored encrypted and persist across restarts.
+   - Messages are sent through your connected account.
+
+3. **Campaign Management**  
+   - Create campaigns with:  
+     - **Custom messages**: Free-form text input in UI with rich text editor.
+     - **Dynamic Placeholders**: Support for {{first_name}}, {{last_order}}, {{discount_code}}.
+     - **Rich Media**: Upload and attach images, videos, product banners.
+     - **Filters**: Rules to target users (e.g., "messaged support in last 30 days").
+     - **Customer Categories**: Automatic classification of users (buyer, browser, refund risk).
+     - **Quiet Hours**: Time-based sending restrictions (e.g., 10 PM - 8 AM).
+     - **Timed Nudges**: Auto-reminder system for non-responders.
+   - Start/pause campaigns at will.
+
+4. **Message Sending**  
+   - Sequential sending to respect Telegram rate limits (~1 msg/sec).
+   - Automatic retries for temporary failures (e.g., FloodWait).
+   - No two campaigns run concurrently.
+   - Respects quiet hours unless manually overridden.
+
+5. **Analytics & Tracking**  
+   - Track per-campaign:  
+     - Total messages sent.
+     - Successes/failures (with error reasons).
+     - Click-through rates on trackable links.
+     - Revenue generated per campaign.
+     - Customer category distribution.
+   - Real-time logs visible in UI.
+   - Post-campaign scorecard with:
+     - Message performance metrics.
+     - Best-performing message lines.
+     - Revenue attribution.
+     - Follow-up campaign suggestions.
+
+6. **Security**  
+   - JWT authentication.
+   - Telegram sessions encrypted at rest.
+   - Modular design for future multi-tenant security features.
+
+---
+
+### **Workflows**  
+
+#### **1. Account Setup**  
+- Connect Telegram account:  
+  - Enter phone number → system sends OTP via Telegram.
+  - Submit OTP + 2FA (if enabled).
+  - Session encrypted and stored.
+
+#### **2. Campaign Creation**  
+- Create campaign:  
+  - Write message in rich text editor.
+  - Insert dynamic placeholders from dropdown menu.
+  - Upload media files (images/videos).
+  - Set customer category filters.
+  - Configure quiet hours.
+  - Set up timed nudges for non-responders.
+  - Add trackable links.
+  - Click "Start".
+
+#### **3. Campaign Execution**  
+- System:  
+  1. Fetches filtered users from DB.
+  2. Applies customer categorization.
+  3. Adds messages to queue.
+  4. Processes queue at ~1 msg/sec.
+  5. Respects quiet hours.
+  6. Sends timed nudges.
+  7. Logs each send attempt (success/failure).
+  8. Tracks link clicks and revenue.
+
+#### **4. Monitoring & Analytics**  
+- Real-time dashboard showing:  
+  - Messages sent/failed.
+  - Current send rate.
+  - Revenue generated.
+  - Click-through rates.
+  - Customer category distribution.
+  - Quiet hours status.
+  - Nudge message status.
+
+---
+
+### **Technical Specifications**  
+
+#### **Data Model**  
+- **Tables**:  
+  ```sql
+  accounts(id, email, api_key, plan_type)
+  campaigns(id, account_id, message_text, status, filters_json, quiet_hours_json, nudge_settings_json)
+  telegram_sessions(account_id, encrypted_session_data)
+  sent_logs(id, account_id, campaign_id, user_phone, status, error_details, timestamp)
+  customer_categories(id, account_id, user_phone, category, confidence_score)
+  trackable_links(id, campaign_id, original_url, tracking_code, clicks, revenue)
+  campaign_analytics(id, campaign_id, total_sent, total_clicks, total_revenue, best_performing_lines)
+  ```
+
+#### **APIs**  
+- **Authentication**:  
+  - `POST /auth/login` → Returns JWT.
+- **Telegram Session**:  
+  - `POST /session/connect` → Initiates Telegram login.
+  - `POST /session/verify` → Submits OTP/2FA.
+- **Campaigns**:  
+  - `POST /campaigns` → Creates campaign.
+  - `POST /campaigns/:id/start` → Starts sending.
+  - `GET /campaigns/:id/logs` → Returns real-time logs.
+  - `GET /campaigns/:id/analytics` → Returns campaign performance.
+  - `POST /campaigns/:id/nudge` → Configures timed nudges.
+- **Media**:  
+  - `POST /media/upload` → Uploads campaign media.
+  - `GET /media/:id` → Retrieves media.
+- **Analytics**:  
+  - `GET /analytics/revenue` → Returns revenue metrics.
+  - `GET /analytics/categories` → Returns customer category distribution.
+
+#### **UI Components**  
+1. **Campaign Editor**:
+   - Rich text editor with placeholder insertion
+   - Media upload interface
+   - Category filter selection
+   - Quiet hours configuration
+   - Nudge message setup
+   - Link tracking setup
+
+2. **Analytics Dashboard**:
+   - Real-time metrics display
+   - Revenue charts
+   - Category distribution visualization
+   - Campaign performance comparison
+   - Best-performing content highlights
+
+3. **Campaign Monitor**:
+   - Live sending status
+   - Error notifications
+   - Quiet hours indicator
+   - Nudge message status
+   - Revenue tracking
+
+#### **Rate Limiting**  
+- Global: 1 msg/sec (enforced via queue delays).
+- API limits (e.g., 10 reqs/min).
+- Quiet hours restrictions.
+
+#### **Error Handling**  
+- **FloodWait**: Automatically pauses and retries after delay.
+- **Invalid Session**: Notifies to re-authenticate.
+- **Permanent Failures**: Logs error (e.g., "User blocked bot").
+- **Media Upload Failures**: Retries with exponential backoff.
+- **Category Classification Errors**: Falls back to default category.
+
+---
+
+### **Non-Goals**  
+- A/B testing.
+- Team collaboration features.
+
+---
+
+### **Developer Notes**  
+- **Critical**: Maintain account_id in data model for future multi-tenant support.
+- **Telegram**: Use GramJS with `StringSession` for serialization.
+- **Scaling**: Queue-based design handles 1K–10K messages/day.
+- **Future Expansion**: System designed with modularity in mind for future multi-tenant support.
+- **Media Storage**: Use cloud storage for campaign media.
+- **Analytics**: Implement real-time aggregation for performance metrics.
+- **Security**: Encrypt all sensitive data including customer categories.
+
+--- 
+
+This describes exactly what to build, with no assumptions. Developers can implement this as-written.
+"
