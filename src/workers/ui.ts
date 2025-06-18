@@ -15,6 +15,7 @@ app.get('/', async (c) => {
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>Telegram Retargeting Platform</title>
         <link rel="stylesheet" href="/src/ui/styles.css">
+        <script src="https://cdn.tailwindcss.com"></script>
       </head>
       <body>
         <div id="root">${html}</div>
