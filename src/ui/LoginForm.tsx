@@ -37,6 +37,7 @@ export default function LoginForm({ onSuccess }: Props) {
         value={apiKey}
         onChange={e => setApiKey(e.target.value)}
       />
+
       <button
         className="bg-blue-500 text-white px-4 py-2 rounded disabled:opacity-50"
         type="submit"
@@ -44,6 +45,7 @@ export default function LoginForm({ onSuccess }: Props) {
       >
         {loading ? 'Loading...' : 'Login'}
       </button>
+
     </form>
   );
 }

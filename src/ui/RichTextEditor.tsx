@@ -18,7 +18,9 @@ export default function RichTextEditor({ html, onChange }: Props) {
       contentEditable
       onInput={handleInput}
       dangerouslySetInnerHTML={{ __html: html }}
+
       className="border p-2 min-h-[80px]"
+
     />
   );
 }

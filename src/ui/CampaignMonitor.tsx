@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState } from 'react';
 
 interface Monitor {
@@ -35,6 +36,7 @@ export default function CampaignMonitor() {
       <div>Quiet Hours: <span id="quiet">{data.quiet ? 'On' : 'Off'}</span></div>
       <div>Nudge Status: <span id="nudge">{data.nudge}</span></div>
       <div>Revenue: <span id="revenue">${data.revenue}</span></div>
+
     </div>
   );
 }

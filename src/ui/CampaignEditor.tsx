@@ -36,6 +36,7 @@ export default function CampaignEditor() {
   };
 
   return (
+
     <form onSubmit={create} className="space-y-4">
       <h2 className="text-xl font-semibold">Create Campaign</h2>
       <label className="block">
@@ -49,12 +50,14 @@ export default function CampaignEditor() {
           onChange={e => setMessage(message + ' ' + e.target.value)}
           defaultValue=""
         >
+
           <option value="" disabled>Select...</option>
           {placeholders.map(p => (
             <option key={p.value} value={p.value}>{p.label}</option>
           ))}
         </select>
       </label>
+
       <label className="block">
         <span className="block mb-1">Media</span>
         <input className="border p-2" type="file" onChange={e => setMedia(e.target.files?.[0] || null)} />
@@ -66,12 +69,14 @@ export default function CampaignEditor() {
           value={category}
           onChange={e => setCategory(e.target.value)}
         >
+
           <option value="">None</option>
           <option value="buyer">Buyer</option>
           <option value="browser">Browser</option>
           <option value="refund_risk">Refund Risk</option>
         </select>
       </label>
+
       <div className="flex space-x-4">
         <label className="block flex-1">
           <span className="block mb-1">Quiet Hours Start</span>
@@ -95,6 +100,7 @@ export default function CampaignEditor() {
         <input className="border p-2 w-full" value={trackingUrl} onChange={e => setTrackingUrl(e.target.value)} />
       </label>
       <button className="bg-blue-500 text-white px-4 py-2 rounded" type="submit">Create</button>
+
     </form>
   );
 }

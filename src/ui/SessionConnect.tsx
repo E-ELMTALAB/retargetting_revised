@@ -43,6 +43,7 @@ export default function SessionConnect({ onSuccess }: Props) {
           value={code}
           onChange={e => setCode(e.target.value)}
         />
+
         <button
           className="bg-green-500 text-white px-4 py-2 rounded disabled:opacity-50"
           type="submit"
@@ -50,6 +51,7 @@ export default function SessionConnect({ onSuccess }: Props) {
         >
           {loading ? 'Verifying...' : 'Verify'}
         </button>
+
       </form>
     </div>
   );
