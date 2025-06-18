@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
 
-export default function SessionConnect() {
+interface Props { onSuccess: () => void; }
+export default function SessionConnect({ onSuccess }: Props) {
   const [phone, setPhone] = useState('');
   const [code, setCode] = useState('');
+  const [loading, setLoading] = useState(false);
 
   const sendOtp = () => {
     fetch('/session/connect', {
@@ -14,11 +16,14 @@ export default function SessionConnect() {
 
   const verify = (e: React.FormEvent) => {
     e.preventDefault();
+    setLoading(true);
     fetch('/session/verify', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ token: code })
-    });
+    })
+      .then(() => onSuccess())
+      .finally(() => setLoading(false));
   };
 
   return (
@@ -36,7 +41,7 @@ export default function SessionConnect() {
           value={code}
           onChange={e => setCode(e.target.value)}
         />
-        <button type="submit">Verify</button>
+        <button type="submit" disabled={loading}>{loading ? 'Verifying...' : 'Verify'}</button>
       </form>
     </div>
   );
