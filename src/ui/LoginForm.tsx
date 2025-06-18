@@ -23,19 +23,29 @@ export default function LoginForm({ onSuccess }: Props) {
       .finally(() => setLoading(false));
   };
   return (
-    <form onSubmit={handleSubmit}>
-      <h2>Login</h2>
+    <form onSubmit={handleSubmit} className="space-y-2">
+      <h2 className="text-xl font-semibold">Login</h2>
       <input
+        className="border p-2 w-full"
         placeholder="Email"
         value={email}
         onChange={e => setEmail(e.target.value)}
       />
       <input
+        className="border p-2 w-full"
         placeholder="API Key"
         value={apiKey}
         onChange={e => setApiKey(e.target.value)}
       />
-      <button type="submit" disabled={loading}>{loading ? 'Loading...' : 'Login'}</button>
+
+      <button
+        className="bg-blue-500 text-white px-4 py-2 rounded disabled:opacity-50"
+        type="submit"
+        disabled={loading}
+      >
+        {loading ? 'Loading...' : 'Login'}
+      </button>
+
     </form>
   );
 }

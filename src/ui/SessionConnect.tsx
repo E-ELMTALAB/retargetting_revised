@@ -27,21 +27,31 @@ export default function SessionConnect({ onSuccess }: Props) {
   };
 
   return (
-    <div>
-      <h2>Connect Telegram</h2>
+    <div className="space-y-2">
+      <h2 className="text-xl font-semibold">Connect Telegram</h2>
       <input
+        className="border p-2 w-full"
         placeholder="Phone"
         value={phone}
         onChange={e => setPhone(e.target.value)}
       />
-      <button onClick={sendOtp}>Send OTP</button>
-      <form onSubmit={verify}>
+      <button className="bg-blue-500 text-white px-4 py-2 rounded" onClick={sendOtp}>Send OTP</button>
+      <form onSubmit={verify} className="space-y-2">
         <input
+          className="border p-2 w-full"
           placeholder="Code"
           value={code}
           onChange={e => setCode(e.target.value)}
         />
-        <button type="submit" disabled={loading}>{loading ? 'Verifying...' : 'Verify'}</button>
+
+        <button
+          className="bg-green-500 text-white px-4 py-2 rounded disabled:opacity-50"
+          type="submit"
+          disabled={loading}
+        >
+          {loading ? 'Verifying...' : 'Verify'}
+        </button>
+
       </form>
     </div>
   );

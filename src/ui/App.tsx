@@ -30,12 +30,14 @@ export default function App() {
   return (
     <ErrorBoundary>
       <StateProvider>
-        <div className="container">
-          <h1>Telegram Retargeting Platform</h1>
-          <nav>
-            <a onClick={() => setPage('editor')}>Editor</a>
-            <a onClick={() => setPage('monitor')}>Monitor</a>
-            <a onClick={() => setPage('analytics')}>Analytics</a>
+
+        <div className="max-w-3xl mx-auto p-4">
+          <h1 className="text-2xl font-bold mb-4">Telegram Retargeting Platform</h1>
+          <nav className="flex space-x-4 mb-4">
+            <a className="text-blue-500 underline cursor-pointer" onClick={() => setPage('editor')}>Editor</a>
+            <a className="text-blue-500 underline cursor-pointer" onClick={() => setPage('monitor')}>Monitor</a>
+            <a className="text-blue-500 underline cursor-pointer" onClick={() => setPage('analytics')}>Analytics</a>
+
           </nav>
           {renderPage()}
         </div>
