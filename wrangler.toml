@@ -4,6 +4,7 @@ compatibility_date = "2024-06-01"
 [[d1_databases]]
 binding = "DB"
 database_name = "retargetting"
+database_id = "53f8a933-9580-4051-aed6-303d2d90e4ac"
 
 [vars]
 D1_ENDPOINT = "${DB.url}"
@@ -13,4 +14,4 @@ SESSION_SECRET = "sessionsecret"
 
 [[kv_namespaces]]
 binding = "SESSION_KV"
-id = "local"
+id = "7ddd5b1302704448b3e792341d533e19"
