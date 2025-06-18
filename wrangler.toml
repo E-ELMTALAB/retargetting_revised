@@ -10,3 +10,7 @@ D1_ENDPOINT = "${DB.url}"
 D1_TOKEN = "${DB.auth_token}"
 JWT_SECRET = "changeme"
 SESSION_SECRET = "sessionsecret"
+
+[[kv_namespaces]]
+binding = "SESSION_KV"
+id = "local"
