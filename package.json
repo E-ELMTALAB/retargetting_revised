@@ -8,7 +8,8 @@
     "frontend": "vite",
     "backend": "wrangler dev src/workers/index.ts",
     "start": "wrangler dev src/workers/index.ts",
-    "build": "wrangler build src/workers/index.ts"
+    "build": "wrangler build src/workers/index.ts",
+    "build:frontend": "vite build"
   },
   "dependencies": {
     "react": "^18.3.1",
