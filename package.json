@@ -4,9 +4,11 @@
   "type": "module",
   "scripts": {
     "test": "vitest",
-    "dev": "wrangler dev src/workers/index.ts",
-    "build": "wrangler build src/workers/index.ts",
-    "start": "wrangler dev src/workers/index.ts"
+    "dev": "vite",
+    "frontend": "vite",
+    "backend": "wrangler dev src/workers/index.ts",
+    "start": "wrangler dev src/workers/index.ts",
+    "build": "wrangler build src/workers/index.ts"
   },
   "dependencies": {
     "react": "^18.3.1",
