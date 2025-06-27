@@ -1,12 +1,12 @@
 import { Hono } from 'hono';
 import auth from './auth';
 import session from './session';
-import ui from './ui';
+import campaigns from './campaigns';
 
 const app = new Hono();
 
 app.route('/auth', auth);
 app.route('/session', session);
-app.route('/', ui);
+app.route('/campaigns', campaigns);
 
 export default app;

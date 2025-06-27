@@ -4,20 +4,29 @@ import SessionConnect from './SessionConnect';
 import CampaignEditor from './CampaignEditor';
 import AnalyticsDashboard from './AnalyticsDashboard';
 import CampaignMonitor from './CampaignMonitor';
-import { StateProvider } from './Store';
+import { StateProvider, useAppState } from './Store';
 import ErrorBoundary from './ErrorBoundary';
 
-type Page = 'login' | 'session' | 'editor' | 'monitor' | 'analytics';
+type Page = 'dashboard' | 'session' | 'editor' | 'monitor' | 'analytics';
 
-export default function App() {
-  const [page, setPage] = useState<Page>('login');
+function MainLayout() {
+  const [page, setPage] = useState<Page>('dashboard');
+  const { token } = useAppState();
+
+  if (!token) {
+    return (
+      <div className="max-w-sm mx-auto p-4">
+        <LoginForm onSuccess={() => setPage('dashboard')} />
+      </div>
+    );
+  }
 
   const renderPage = () => {
     switch (page) {
-      case 'login':
-        return <LoginForm onSuccess={() => setPage('session')} />;
+      case 'dashboard':
+        return <AnalyticsDashboard />;
       case 'session':
-        return <SessionConnect onSuccess={() => setPage('editor')} />;
+        return <SessionConnect onSuccess={() => setPage('dashboard')} />;
       case 'editor':
         return <CampaignEditor />;
       case 'monitor':
@@ -28,19 +37,27 @@ export default function App() {
   };
 
   return (
+    <div className="flex min-h-screen">
+      <aside className="w-48 bg-gray-100 p-4 space-y-2">
+        <h1 className="text-lg font-bold mb-4">Telegram Retargeting</h1>
+        <nav className="flex flex-col space-y-2">
+          <a className="cursor-pointer hover:underline" onClick={() => setPage('dashboard')}>Dashboard</a>
+          <a className="cursor-pointer hover:underline" onClick={() => setPage('editor')}>Editor</a>
+          <a className="cursor-pointer hover:underline" onClick={() => setPage('analytics')}>Analytics</a>
+          <a className="cursor-pointer hover:underline" onClick={() => setPage('session')}>Session</a>
+          <a className="cursor-pointer hover:underline" onClick={() => setPage('monitor')}>Monitor</a>
+        </nav>
+      </aside>
+      <main className="flex-1 p-4">{renderPage()}</main>
+    </div>
+  );
+}
+
+export default function App() {
+  return (
     <ErrorBoundary>
       <StateProvider>
-
-        <div className="max-w-3xl mx-auto p-4">
-          <h1 className="text-2xl font-bold mb-4">Telegram Retargeting Platform</h1>
-          <nav className="flex space-x-4 mb-4">
-            <a className="text-blue-500 underline cursor-pointer" onClick={() => setPage('editor')}>Editor</a>
-            <a className="text-blue-500 underline cursor-pointer" onClick={() => setPage('monitor')}>Monitor</a>
-            <a className="text-blue-500 underline cursor-pointer" onClick={() => setPage('analytics')}>Analytics</a>
-
-          </nav>
-          {renderPage()}
-        </div>
+        <MainLayout />
       </StateProvider>
     </ErrorBoundary>
   );

@@ -4,8 +4,8 @@ import React from 'react';
 import App from '../../../src/ui/App';
 
 describe('App', () => {
-  it('renders main header', () => {
-    const { getByText } = render(<App />);
-    expect(getByText('Telegram Retargeting Platform')).toBeTruthy();
+  it('renders login form initially', () => {
+    const { getAllByText } = render(<App />);
+    expect(getAllByText('Login').length).toBeGreaterThan(0);
   });
 });
