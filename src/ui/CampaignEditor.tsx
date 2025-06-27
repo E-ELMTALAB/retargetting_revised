@@ -17,7 +17,7 @@ export default function CampaignEditor() {
   const [nudgeDelay, setNudgeDelay] = useState(0);
   const [trackingUrl, setTrackingUrl] = useState('');
 
-  const create = (e: React.FormEvent) => {
+  const create = async (e: React.FormEvent) => {
     e.preventDefault();
     const form = new FormData();
     form.append('message_text', message);
@@ -29,16 +29,19 @@ export default function CampaignEditor() {
     form.append('nudge_delay', String(nudgeDelay));
     form.append('tracking_url', trackingUrl);
 
-    fetch('/campaigns', {
+    const res = await fetch('/campaigns', {
       method: 'POST',
       body: form
     });
+    const data = await res.json();
+    await fetch(`/campaigns/${data.id}/start`, { method: 'POST' });
+    alert('Campaign started');
   };
 
   return (
 
-    <form onSubmit={create} className="space-y-4">
-      <h2 className="text-xl font-semibold">Create Campaign</h2>
+    <form onSubmit={create} className="space-y-4 p-4 border rounded shadow">
+      <h2 className="text-xl font-semibold text-center">Create Campaign</h2>
       <label className="block">
         <span className="block mb-1">Message</span>
         <RichTextEditor html={message} onChange={setMessage} />
@@ -46,7 +49,7 @@ export default function CampaignEditor() {
       <label className="block">
         <span className="block mb-1">Insert Placeholder</span>
         <select
-          className="border p-2"
+          className="border p-2 rounded"
           onChange={e => setMessage(message + ' ' + e.target.value)}
           defaultValue=""
         >
@@ -60,12 +63,12 @@ export default function CampaignEditor() {
 
       <label className="block">
         <span className="block mb-1">Media</span>
-        <input className="border p-2" type="file" onChange={e => setMedia(e.target.files?.[0] || null)} />
+        <input className="border p-2 rounded w-full" type="file" onChange={e => setMedia(e.target.files?.[0] || null)} />
       </label>
       <label className="block">
         <span className="block mb-1">Category</span>
         <select
-          className="border p-2"
+          className="border p-2 rounded w-full"
           value={category}
           onChange={e => setCategory(e.target.value)}
         >
@@ -80,24 +83,24 @@ export default function CampaignEditor() {
       <div className="flex space-x-4">
         <label className="block flex-1">
           <span className="block mb-1">Quiet Hours Start</span>
-          <input className="border p-2 w-full" type="time" value={quietStart} onChange={e => setQuietStart(e.target.value)} />
+          <input className="border p-2 rounded w-full" type="time" value={quietStart} onChange={e => setQuietStart(e.target.value)} />
         </label>
         <label className="block flex-1">
           <span className="block mb-1">Quiet Hours End</span>
-          <input className="border p-2 w-full" type="time" value={quietEnd} onChange={e => setQuietEnd(e.target.value)} />
+          <input className="border p-2 rounded w-full" type="time" value={quietEnd} onChange={e => setQuietEnd(e.target.value)} />
         </label>
       </div>
       <label className="block">
         <span className="block mb-1">Nudge Text</span>
-        <input className="border p-2 w-full" value={nudgeText} onChange={e => setNudgeText(e.target.value)} />
+        <input className="border p-2 rounded w-full" value={nudgeText} onChange={e => setNudgeText(e.target.value)} />
       </label>
       <label className="block">
         <span className="block mb-1">Nudge Delay (mins)</span>
-        <input className="border p-2" type="number" value={nudgeDelay} onChange={e => setNudgeDelay(parseInt(e.target.value))} />
+        <input className="border p-2 rounded" type="number" value={nudgeDelay} onChange={e => setNudgeDelay(parseInt(e.target.value))} />
       </label>
       <label className="block">
         <span className="block mb-1">Tracking URL</span>
-        <input className="border p-2 w-full" value={trackingUrl} onChange={e => setTrackingUrl(e.target.value)} />
+        <input className="border p-2 rounded w-full" value={trackingUrl} onChange={e => setTrackingUrl(e.target.value)} />
       </label>
       <button className="bg-blue-500 text-white px-4 py-2 rounded" type="submit">Create</button>
 
