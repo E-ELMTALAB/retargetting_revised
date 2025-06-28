@@ -1,10 +1,28 @@
-import { TelegramClient } from 'telegram';
-import { StringSession } from 'telegram/sessions';
+
+import MTProto from '@mtproto/core/envs/node';
+
+class MemoryStorage {
+  private data = new Map<string, string>();
+
+  async set(key: string, value: string) {
+    this.data.set(key, value);
+  }
+
+  async get(key: string) {
+    return this.data.get(key) ?? null;
+  }
+
+  dump() {
+    return JSON.stringify(Object.fromEntries(this.data));
+  }
+}
 
 export interface PendingLogin {
-  client: TelegramClient;
+  client: any;
   phoneNumber: string;
   phoneCodeHash: string;
+  storage: MemoryStorage;
+
 }
 
 export class TelegramService {
@@ -13,29 +31,38 @@ export class TelegramService {
   constructor(private apiId: number, private apiHash: string) {}
 
   async sendCode(phone: string) {
-    const session = new StringSession('');
-    const client = new TelegramClient(session, this.apiId, this.apiHash, {
-      connectionRetries: 5,
+
+    const storage = new MemoryStorage();
+    const client = new MTProto({
+      api_id: this.apiId,
+      api_hash: this.apiHash,
+      storageOptions: { instance: storage },
     });
-    await client.connect();
-    const result = await client.sendCode({ apiId: this.apiId, apiHash: this.apiHash }, phone);
-    this.pending.set(phone, { client, phoneNumber: phone, phoneCodeHash: result.phoneCodeHash });
+    const result = await client.call('auth.sendCode', {
+      phone_number: phone,
+      settings: { _: 'codeSettings' },
+    });
+    this.pending.set(phone, {
+      client,
+      phoneNumber: phone,
+      phoneCodeHash: result.phone_code_hash,
+      storage,
+    });
+
   }
 
   async signIn(phone: string, code: string): Promise<string> {
     const login = this.pending.get(phone);
     if (!login) throw new Error('no pending login');
-    const { client, phoneCodeHash } = login;
-    const user = await client.invoke(
-      new (await import('telegram/tl')).Api.auth.SignIn({
-        phoneNumber: phone,
-        phoneCodeHash,
-        phoneCode: code,
-      })
-    );
-    await client.disconnect();
-    const session = client.session.save();
+
+    const { client, phoneCodeHash, storage } = login;
+    await client.call('auth.signIn', {
+      phone_number: phone,
+      phone_code_hash: phoneCodeHash,
+      phone_code: code,
+    });
     this.pending.delete(phone);
-    return session;
+    return storage.dump();
+
   }
 }
