@@ -1,3 +1,4 @@
+
 import MTProto from '@mtproto/core/envs/node';
 
 class MemoryStorage {
@@ -21,6 +22,7 @@ export interface PendingLogin {
   phoneNumber: string;
   phoneCodeHash: string;
   storage: MemoryStorage;
+
 }
 
 export class TelegramService {
@@ -29,6 +31,7 @@ export class TelegramService {
   constructor(private apiId: number, private apiHash: string) {}
 
   async sendCode(phone: string) {
+
     const storage = new MemoryStorage();
     const client = new MTProto({
       api_id: this.apiId,
@@ -45,11 +48,13 @@ export class TelegramService {
       phoneCodeHash: result.phone_code_hash,
       storage,
     });
+
   }
 
   async signIn(phone: string, code: string): Promise<string> {
     const login = this.pending.get(phone);
     if (!login) throw new Error('no pending login');
+
     const { client, phoneCodeHash, storage } = login;
     await client.call('auth.signIn', {
       phone_number: phone,
@@ -58,5 +63,6 @@ export class TelegramService {
     });
     this.pending.delete(phone);
     return storage.dump();
+
   }
 }
