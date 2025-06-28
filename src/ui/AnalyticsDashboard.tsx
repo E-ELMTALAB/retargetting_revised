@@ -26,19 +26,19 @@ export default function AnalyticsDashboard() {
   useEffect(() => {
     const load = () => {
       fetch('/analytics/revenue')
-        .then(r => r.json())
+        .then(r => r.json() as Promise<RevenueMetrics>)
         .then(setMetrics)
         .catch(() => {});
 
       fetch('/analytics/categories')
-        .then(r => r.json())
+        .then(r => r.json() as Promise<CategoryMetrics>)
         .then(setCategories)
         .catch(() => {});
 
       Promise.all([
-        fetch('/campaigns/1/analytics').then(r => r.json()).catch(() => null),
-        fetch('/campaigns/2/analytics').then(r => r.json()).catch(() => null)
-      ]).then(res => setCampaigns(res.filter(Boolean)));
+        fetch('/campaigns/1/analytics').then(r => r.json() as Promise<CampaignAnalytics>).catch(() => null),
+        fetch('/campaigns/2/analytics').then(r => r.json() as Promise<CampaignAnalytics>).catch(() => null)
+      ]).then(res => setCampaigns(res.filter(Boolean) as CampaignAnalytics[]));
     };
 
     load();

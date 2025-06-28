@@ -10,17 +10,30 @@ export default function LoginForm({ onSuccess }: Props) {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
+    console.log('Submitting login with:', { email, apiKey });
     fetch('/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, api_key: apiKey })
     })
-      .then(r => r.json())
+      .then(async r => {
+        console.log('Received response:', r);
+        if (!r.ok) {
+          const text = await r.text();
+          console.log('Login failed, response text:', text);
+          throw new Error(text);
+        }
+        return r.json() as Promise<{ token: string }>;
+      })
       .then(data => {
+        console.log('Login success, received token:', data.token);
         setToken(data.token);
         onSuccess();
       })
-      .finally(() => setLoading(false));
+      .catch(err => {
+        console.log('Login error:', err);
+        setLoading(false);
+      });
   };
   return (
     <form

@@ -1,3 +1,4 @@
+main = "src/workers/index.ts"
 name = "retargetting-platform"
 compatibility_date = "2024-06-01"
 
@@ -15,3 +16,4 @@ SESSION_SECRET = "sessionsecret"
 [[kv_namespaces]]
 binding = "SESSION_KV"
 id = "7ddd5b1302704448b3e792341d533e19"
+
