@@ -1,15 +1,20 @@
 import React, { useState } from 'react';
+import { useAppState } from './Store';
 
 interface Props { onSuccess: () => void; }
 export default function SessionConnect({ onSuccess }: Props) {
   const [phone, setPhone] = useState('');
   const [code, setCode] = useState('');
   const [loading, setLoading] = useState(false);
+  const { token } = useAppState();
 
   const sendOtp = () => {
     fetch('/session/connect', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`
+      },
       body: JSON.stringify({ phone })
     });
   };
@@ -19,8 +24,11 @@ export default function SessionConnect({ onSuccess }: Props) {
     setLoading(true);
     fetch('/session/verify', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token: code })
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`
+      },
+      body: JSON.stringify({ phone, code })
     })
       .then(() => onSuccess())
       .finally(() => setLoading(false));

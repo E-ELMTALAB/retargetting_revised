@@ -12,6 +12,8 @@ D1_ENDPOINT = "${DB.url}"
 D1_TOKEN = "${DB.auth_token}"
 JWT_SECRET = "changeme"
 SESSION_SECRET = "sessionsecret"
+TELEGRAM_API_ID = "123"
+TELEGRAM_API_HASH = "yourhash"
 
 [[kv_namespaces]]
 binding = "SESSION_KV"
