@@ -51,7 +51,9 @@ app.post('/verify', async (c) => {
   const secret = await importKey(new TextEncoder().encode(c.env.SESSION_SECRET));
   const store = new SessionStore(c.env.SESSION_KV, secret);
   await store.set(accountId, sessionStr);
+
   await c.env.SESSION_KV.put(`otp:${accountId}:${phone}`, '', { expirationTtl: 1 });
+
   return c.text('Session stored');
 });
 

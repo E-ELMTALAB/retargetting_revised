@@ -2,7 +2,9 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { Hono } from 'hono';
 import session from '../../src/workers/session';
 import * as telegram from '../../src/lib/telegram';
+
 import { encrypt, importKey } from '../../src/lib/encryption';
+
 vi.mock('hono/jwt', () => ({ verify: vi.fn(() => Promise.resolve({ sub: 1 })) }));
 
 let app: Hono;
@@ -38,6 +40,7 @@ describe('session', () => {
     expect(kv.has('session:1')).toBe(true);
   });
 
+
   it('returns login status', async () => {
     const env = {
       SESSION_KV: kvNs,
@@ -58,4 +61,5 @@ describe('session', () => {
     const data = await res.json();
     expect(data.loggedIn).toBe(true);
   });
+
 });
