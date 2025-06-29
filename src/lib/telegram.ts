@@ -2,8 +2,15 @@ import { TelegramClient } from 'telegram';
 import { StringSession } from 'telegram/sessions';
 import { Api } from 'telegram';
 
+import { PromisedWebSockets } from 'telegram/extensions';
+
 export async function sendLoginCode(apiId: number, apiHash: string, phone: string) {
-  const client = new TelegramClient(new StringSession(''), apiId, apiHash, { connectionRetries: 5 });
+  const client = new TelegramClient(new StringSession(''), apiId, apiHash, {
+    connectionRetries: 5,
+    networkSocket: PromisedWebSockets,
+    useWSS: true
+  });
+
   await client.connect();
   const result = await client.sendCode({
     apiId,
@@ -16,7 +23,13 @@ export async function sendLoginCode(apiId: number, apiHash: string, phone: strin
 }
 
 export async function verifyLoginCode(apiId: number, apiHash: string, phone: string, phoneCodeHash: string, code: string, password?: string) {
-  const client = new TelegramClient(new StringSession(''), apiId, apiHash, { connectionRetries: 5 });
+
+  const client = new TelegramClient(new StringSession(''), apiId, apiHash, {
+    connectionRetries: 5,
+    networkSocket: PromisedWebSockets,
+    useWSS: true
+  });
+
   await client.connect();
   try {
     await client.signIn({ phoneNumber: phone, phoneCodeHash, phoneCode: code });
