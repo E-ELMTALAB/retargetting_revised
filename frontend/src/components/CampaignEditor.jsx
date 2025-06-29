@@ -1,45 +1,128 @@
-import React from 'react'
+import React, { useState, useRef } from 'react'
+import ReactQuill from 'react-quill'
+import 'react-quill/dist/quill.snow.css'
+
+const placeholders = ['{{first_name}}', '{{last_order}}', '{{discount_code}}']
 
 export default function CampaignEditor() {
+  const [message, setMessage] = useState('')
+  const [media, setMedia] = useState(null)
+  const [categories, setCategories] = useState([])
+  const [quietStart, setQuietStart] = useState('')
+  const [quietEnd, setQuietEnd] = useState('')
+  const [nudge, setNudge] = useState('')
+  const [trackingUrl, setTrackingUrl] = useState('')
+  const quillRef = useRef(null)
+
+  const insertPlaceholder = ph => {
+    const quill = quillRef.current.getEditor()
+    const range = quill.getSelection(true)
+    quill.insertText(range.index, ph)
+  }
+
+  const handleSubmit = e => {
+    e.preventDefault()
+    alert('Campaign saved (mock)')
+  }
+
   return (
-    <div>
-      <h2>Campaign Editor</h2>
-      <form>
-        <label>
-          Message:
-          <textarea placeholder="Write your message with placeholders" />
-        </label>
-        <br />
-        <label>
-          Media:
-          <input type="file" />
-        </label>
-        <br />
-        <label>
-          Category Filters:
-          <select multiple>
+    <div className="p-4">
+      <h2 className="text-2xl mb-4">Campaign Editor</h2>
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <div>
+          <label className="block mb-1 font-semibold">Message</label>
+          <ReactQuill
+            ref={quillRef}
+            value={message}
+            onChange={setMessage}
+            className="bg-white"
+          />
+          <div className="mt-2 space-x-2">
+            {placeholders.map(ph => (
+              <button
+                type="button"
+                key={ph}
+                className="px-2 py-1 bg-blue-500 text-white rounded text-sm"
+                onClick={() => insertPlaceholder(ph)}
+              >
+                {ph}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <label className="block mb-1 font-semibold">Media</label>
+          <input
+            type="file"
+            className="block"
+            onChange={e => setMedia(e.target.files[0])}
+          />
+        </div>
+
+        <div>
+          <label className="block mb-1 font-semibold">Category Filters</label>
+          <select
+            multiple
+            className="border p-2 w-full"
+            value={categories}
+            onChange={e =>
+              setCategories(Array.from(e.target.selectedOptions, o => o.value))
+            }
+          >
             <option value="vip">VIP</option>
             <option value="new">New</option>
             <option value="returning">Returning</option>
           </select>
-        </label>
-        <br />
-        <label>
-          Quiet Hours:
-          <input type="time" /> to <input type="time" />
-        </label>
-        <br />
-        <label>
-          Nudge Message:
-          <input type="text" placeholder="Follow-up text" />
-        </label>
-        <br />
-        <label>
-          Link Tracking URL:
-          <input type="url" placeholder="https://" />
-        </label>
-        <br />
-        <button type="submit">Start Campaign</button>
+        </div>
+
+        <div className="flex space-x-2">
+          <div className="flex flex-col">
+            <label className="font-semibold">Quiet Start</label>
+            <input
+              type="time"
+              className="border p-2"
+              value={quietStart}
+              onChange={e => setQuietStart(e.target.value)}
+            />
+          </div>
+          <div className="flex flex-col">
+            <label className="font-semibold">Quiet End</label>
+            <input
+              type="time"
+              className="border p-2"
+              value={quietEnd}
+              onChange={e => setQuietEnd(e.target.value)}
+            />
+          </div>
+        </div>
+
+        <div>
+          <label className="block mb-1 font-semibold">Nudge Message</label>
+          <input
+            type="text"
+            className="border p-2 w-full"
+            value={nudge}
+            onChange={e => setNudge(e.target.value)}
+          />
+        </div>
+
+        <div>
+          <label className="block mb-1 font-semibold">Link Tracking URL</label>
+          <input
+            type="url"
+            className="border p-2 w-full"
+            value={trackingUrl}
+            onChange={e => setTrackingUrl(e.target.value)}
+          />
+        </div>
+
+        <button
+          type="submit"
+          className="px-4 py-2 bg-green-600 text-white rounded"
+        >
+          Start Campaign
+        </button>
       </form>
     </div>
   )
