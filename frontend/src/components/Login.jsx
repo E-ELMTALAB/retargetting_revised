@@ -10,22 +10,32 @@ export default function Login({ onLogin }) {
   }
 
   return (
-    <div className="login">
-      <form onSubmit={handleSubmit}>
-        <h1>Login</h1>
+    <div className="flex h-screen items-center justify-center">
+      <form
+        onSubmit={handleSubmit}
+        className="flex flex-col bg-white p-8 rounded shadow gap-4 w-80"
+      >
+        <h1 className="text-xl font-semibold text-center">Login</h1>
         <input
           type="text"
           placeholder="Email"
+          className="border p-2"
           value={email}
           onChange={e => setEmail(e.target.value)}
         />
         <input
           type="password"
           placeholder="Password"
+          className="border p-2"
           value={password}
           onChange={e => setPassword(e.target.value)}
         />
-        <button type="submit">Log In</button>
+        <button
+          type="submit"
+          className="bg-blue-600 text-white py-2 rounded"
+        >
+          Log In
+        </button>
       </form>
     </div>
   )
