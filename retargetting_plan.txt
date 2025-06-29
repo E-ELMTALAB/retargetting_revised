@@ -7,17 +7,29 @@ Here's a comprehensive plain-text description of your system for developers:
 ### **System Overview**  
 A Telegram retargeting platform where you can connect your Telegram account and run retargeting campaigns to send ads to users who previously messaged your support channel. The system handles Telegram API rate limits and provides analytics. The architecture is designed to be modular, allowing for future multi-tenant expansion.
 
+**Multi-Tenancy Requirement (Critical):**
+- The entire codebase (Cloudflare Worker, Python API, database, and all async management) must be structured to fully support multi-tenant operation from the start.
+- All data models, APIs, and logic must be designed to handle multiple tenants/accounts/users in parallel, with strict separation and correct async handling.
+- Every part of the system (including DB queries, job scheduling, and API endpoints) must always include tenant/account context and never mix data between tenants.
+
+**Backend Architecture (Updated):**
+- **Cloudflare Worker (Manager):** Handles orchestration, scheduling, queueing, storage, and exposes all public APIs. Uses Cloudflare-native features (D1, KV, Queues, Cron, etc). Does NOT perform Telegram work directly. Manages multiple users/campaigns asynchronously, passing information and orders to the Python API, and handles requests asynchronously.
+- **Python Slave API:** Receives jobs from the Worker and performs all Telegram/retargeting operations (sending messages, session management, user categorization, etc). All Telegram interactions are done exclusively with Telethon. Based on logic in `retargetting_old.py`. The Python Slave API must be implemented using Flask.
+- **Frontend:** React-based UI (unchanged).
+
 ---
 
 ### **Core Requirements**  
 1. **User Management**  
    - Currently single-user focused, but designed with account_id in data model for future multi-tenant support.
    - Database queries and storage keys include `account_id` for future-proofing.
+   - Managed by Worker (Cloudflare D1 DB).
 
 2. **Telegram Integration**  
    - You provide your Telegram account credentials.
-   - Sessions are stored encrypted and persist across restarts.
-   - Messages are sent through your connected account.
+   - Sessions are stored encrypted and persist across restarts (handled by Worker).
+   - Worker sends session data to Python API as needed for Telegram actions.
+   - Python API uses Telethon exclusively for all Telegram operations.
 
 3. **Campaign Management**  
    - Create campaigns with:  
@@ -29,12 +41,14 @@ A Telegram retargeting platform where you can connect your Telegram account and 
      - **Quiet Hours**: Time-based sending restrictions (e.g., 10 PM - 8 AM).
      - **Timed Nudges**: Auto-reminder system for non-responders.
    - Start/pause campaigns at will.
+   - Campaigns created/managed via Worker APIs. Worker schedules and queues jobs (using Cloudflare Queues/Cron). Worker sends job payloads to Python API for execution. Python API executes campaign logic and reports results/status back to Worker. Cloudflare Worker manages multiple users/campaigns asynchronously and only passes information and orders to the Python API; all actual campaign execution is done by the API.
 
 4. **Message Sending**  
    - Sequential sending to respect Telegram rate limits (~1 msg/sec).
    - Automatic retries for temporary failures (e.g., FloodWait).
    - No two campaigns run concurrently.
    - Respects quiet hours unless manually overridden.
+   - Worker enforces global rate limits, quiet hours, and concurrency. Worker schedules jobs and sends to Python API at correct intervals. Python API handles actual message sending, retries, and error handling.
 
 5. **Analytics & Tracking**  
    - Track per-campaign:  
@@ -49,11 +63,13 @@ A Telegram retargeting platform where you can connect your Telegram account and 
      - Best-performing message lines.
      - Revenue attribution.
      - Follow-up campaign suggestions.
+   - Worker collects logs/results from Python API and stores in D1. Worker exposes analytics APIs for frontend. Python API returns detailed logs/results for each job.
 
 6. **Security**  
-   - JWT authentication.
-   - Telegram sessions encrypted at rest.
+   - JWT authentication (handled by Worker).
+   - Telegram sessions encrypted at rest (Worker responsibility).
    - Modular design for future multi-tenant security features.
+   - Python API should not store sensitive data long-term.
 
 ---
 
@@ -63,7 +79,8 @@ A Telegram retargeting platform where you can connect your Telegram account and 
 - Connect Telegram account:  
   - Enter phone number → system sends OTP via Telegram.
   - Submit OTP + 2FA (if enabled).
-  - Session encrypted and stored.
+  - Session encrypted and stored (by Worker).
+  - Worker sends session to Python API as needed for Telegram actions.
 
 #### **2. Campaign Creation**  
 - Create campaign:  
@@ -75,10 +92,11 @@ A Telegram retargeting platform where you can connect your Telegram account and 
   - Set up timed nudges for non-responders.
   - Add trackable links.
   - Click "Start".
+- Worker stores campaign, schedules jobs, and manages queue. Worker sends job payloads to Python API for execution.
 
 #### **3. Campaign Execution**  
 - System:  
-  1. Fetches filtered users from DB.
+  1. Worker fetches filtered users from DB.
   2. Applies customer categorization.
   3. Adds messages to queue.
   4. Processes queue at ~1 msg/sec.
@@ -86,6 +104,7 @@ A Telegram retargeting platform where you can connect your Telegram account and 
   6. Sends timed nudges.
   7. Logs each send attempt (success/failure).
   8. Tracks link clicks and revenue.
+- Worker sends jobs to Python API (one at a time, respecting rate limits/quiet hours). Python API sends messages, handles retries/errors, and returns logs/results to Worker. Worker updates campaign status and analytics.
 
 #### **4. Monitoring & Analytics**  
 - Real-time dashboard showing:  
@@ -96,6 +115,7 @@ A Telegram retargeting platform where you can connect your Telegram account and 
   - Customer category distribution.
   - Quiet hours status.
   - Nudge message status.
+- Worker aggregates logs/results from Python API. Worker exposes real-time analytics APIs for frontend dashboard.
 
 ---
 
@@ -131,6 +151,10 @@ A Telegram retargeting platform where you can connect your Telegram account and 
 - **Analytics**:  
   - `GET /analytics/revenue` → Returns revenue metrics.
   - `GET /analytics/categories` → Returns customer category distribution.
+- **Python Slave API**:  
+  - Receives job payloads from Worker (e.g., `/execute_campaign`).
+  - Endpoints for: executing campaign jobs (send messages, apply filters, etc), returning job status/logs/results, (optional) health check/status.
+  - Implements all Telegram logic from `retargetting_old.py` (message sending, user filtering, retries, error handling, etc).
 
 #### **UI Components**  
 1. **Campaign Editor**:
@@ -156,16 +180,17 @@ A Telegram retargeting platform where you can connect your Telegram account and 
    - Revenue tracking
 
 #### **Rate Limiting**  
-- Global: 1 msg/sec (enforced via queue delays).
+- Global: 1 msg/sec (enforced via queue delays by Worker).
 - API limits (e.g., 10 reqs/min).
 - Quiet hours restrictions.
 
 #### **Error Handling**  
-- **FloodWait**: Automatically pauses and retries after delay.
+- **FloodWait**: Python API automatically pauses and retries after delay.
 - **Invalid Session**: Notifies to re-authenticate.
 - **Permanent Failures**: Logs error (e.g., "User blocked bot").
 - **Media Upload Failures**: Retries with exponential backoff.
 - **Category Classification Errors**: Falls back to default category.
+- Worker handles retries, user notifications, and analytics updates.
 
 ---
 
@@ -177,6 +202,8 @@ A Telegram retargeting platform where you can connect your Telegram account and 
 
 ### **Developer Notes**  
 - **Critical**: Maintain account_id in data model for future multi-tenant support.
+- **Cloudflare Worker**: Handles all orchestration, scheduling, and storage. Exposes all public APIs. Sends jobs to Python API.
+- **Python API**: Only does Telegram work, based on `retargetting_old.py`. Receives all data needed for a job from Worker. Should be stateless where possible.
 - **Telegram**: Use GramJS with `StringSession` for serialization.
 - **Scaling**: Queue-based design handles 1K–10K messages/day.
 - **Future Expansion**: System designed with modularity in mind for future multi-tenant support.
