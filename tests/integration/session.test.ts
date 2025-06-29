@@ -2,6 +2,9 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { Hono } from 'hono';
 import session from '../../src/workers/session';
 import * as telegram from '../../src/lib/telegram';
+
+import { encrypt, importKey } from '../../src/lib/encryption';
+
 vi.mock('hono/jwt', () => ({ verify: vi.fn(() => Promise.resolve({ sub: 1 })) }));
 
 let app: Hono;
@@ -36,4 +39,27 @@ describe('session', () => {
     expect(res.status).toBe(200);
     expect(kv.has('session:1')).toBe(true);
   });
+
+
+  it('returns login status', async () => {
+    const env = {
+      SESSION_KV: kvNs,
+      SESSION_SECRET: '0123456789abcdef0123456789abcdef',
+      TELEGRAM_API_ID: '1',
+      TELEGRAM_API_HASH: 'h',
+      JWT_SECRET: 'jwt'
+    } as any;
+
+    const key = await importKey(new TextEncoder().encode(env.SESSION_SECRET));
+    const enc = await encrypt('session', key);
+    kv.set('session:1', enc);
+    const req = new Request('http://test/session/status', {
+      headers: { Authorization: 'Bearer token' }
+    });
+    const res = await app.fetch(req, env);
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.loggedIn).toBe(true);
+  });
+
 });
