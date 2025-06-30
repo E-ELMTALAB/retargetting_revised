@@ -3,6 +3,7 @@ import { NavLink, Routes, Route, Navigate } from 'react-router-dom'
 import CampaignEditor from './CampaignEditor'
 import AnalyticsDashboard from './AnalyticsDashboard'
 import CampaignMonitor from './CampaignMonitor'
+import ConnectTelegram from './ConnectTelegram'
 
 export default function MainPage({ onLogout }) {
   return (
@@ -43,6 +44,17 @@ export default function MainPage({ onLogout }) {
 
           </li>
           <li>
+            <NavLink
+              to="/connect"
+              className={({ isActive }) =>
+                `block px-2 py-1 rounded ${isActive ? 'bg-blue-500 text-white' : 'text-blue-600'}`
+              }
+            >
+              Connect Telegram
+            </NavLink>
+
+          </li>
+          <li>
             <button className="text-red-600" onClick={onLogout}>Logout</button>
           </li>
         </ul>
@@ -53,6 +65,7 @@ export default function MainPage({ onLogout }) {
           <Route path="/editor" element={<CampaignEditor />} />
           <Route path="/analytics" element={<AnalyticsDashboard />} />
           <Route path="/monitor" element={<CampaignMonitor />} />
+          <Route path="/connect" element={<ConnectTelegram />} />
         </Routes>
       </main>
     </div>
