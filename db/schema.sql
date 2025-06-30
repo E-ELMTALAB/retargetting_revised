@@ -64,3 +64,12 @@ CREATE TABLE campaign_analytics (
     best_performing_lines TEXT,
     FOREIGN KEY (campaign_id) REFERENCES campaigns(id)
 );
+
+-- Temporary storage for ongoing Telegram logins
+CREATE TABLE pending_sessions (
+    account_id INTEGER PRIMARY KEY,
+    phone TEXT,
+    session TEXT,
+    phone_code_hash TEXT,
+    FOREIGN KEY (account_id) REFERENCES accounts(id)
+);
