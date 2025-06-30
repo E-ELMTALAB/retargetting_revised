@@ -1,5 +1,5 @@
 import React from 'react'
-import { Link, Routes, Route, Navigate } from 'react-router-dom'
+import { NavLink, Routes, Route, Navigate } from 'react-router-dom'
 import CampaignEditor from './CampaignEditor'
 import AnalyticsDashboard from './AnalyticsDashboard'
 import CampaignMonitor from './CampaignMonitor'
@@ -8,16 +8,39 @@ export default function MainPage({ onLogout }) {
   return (
     <div className="flex h-screen">
       <aside className="w-60 bg-gray-100 p-4">
-        <h2 className="text-xl mb-2">Menu</h2>
+
+        <h2 className="text-xl mb-2 font-semibold">Menu</h2>
         <ul className="space-y-2">
           <li>
-            <Link className="text-blue-600" to="/editor">Campaign Editor</Link>
+            <NavLink
+              to="/editor"
+              className={({ isActive }) =>
+                `block px-2 py-1 rounded ${isActive ? 'bg-blue-500 text-white' : 'text-blue-600'}`
+              }
+            >
+              Campaign Editor
+            </NavLink>
           </li>
           <li>
-            <Link className="text-blue-600" to="/analytics">Analytics</Link>
+            <NavLink
+              to="/analytics"
+              className={({ isActive }) =>
+                `block px-2 py-1 rounded ${isActive ? 'bg-blue-500 text-white' : 'text-blue-600'}`
+              }
+            >
+              Analytics
+            </NavLink>
           </li>
           <li>
-            <Link className="text-blue-600" to="/monitor">Monitor</Link>
+            <NavLink
+              to="/monitor"
+              className={({ isActive }) =>
+                `block px-2 py-1 rounded ${isActive ? 'bg-blue-500 text-white' : 'text-blue-600'}`
+              }
+            >
+              Monitor
+            </NavLink>
+
           </li>
           <li>
             <button className="text-red-600" onClick={onLogout}>Logout</button>
