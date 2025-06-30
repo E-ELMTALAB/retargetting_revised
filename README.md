@@ -15,6 +15,8 @@ This repository contains the initial structure of a multi-tenant Telegram retarg
 ```
 cd python_api
 pip install -r requirements.txt
+export API_ID=YOUR_TELEGRAM_API_ID
+export API_HASH=YOUR_TELEGRAM_API_HASH
 python app.py
 ```
 

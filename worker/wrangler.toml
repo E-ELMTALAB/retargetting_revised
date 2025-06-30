@@ -4,3 +4,11 @@ compatibility_date = "2023-05-18"
 
 [build]
 command = "npm run build"
+
+[vars]
+PYTHON_API_URL = "http://localhost:5000"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "retargetting"
+database_id = "RETARGETTING_DB"

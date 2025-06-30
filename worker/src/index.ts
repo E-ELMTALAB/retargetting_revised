@@ -1,5 +1,10 @@
 import { Router } from 'itty-router'
 
+interface Env {
+  DB: D1Database
+  PYTHON_API_URL: string
+}
+
 const router = Router()
 
 // Authentication - placeholder
@@ -7,6 +12,74 @@ router.post('/auth/login', async (request: Request) => {
   // TODO: implement JWT issuance
   return new Response(JSON.stringify({ token: 'TODO' }), {
     headers: { 'Content-Type': 'application/json' },
+  })
+})
+
+// Begin Telegram session - send code
+router.post('/session/connect', async (request: Request, env: Env) => {
+  const { phone } = await request.json()
+  const accountId = 1
+  const resp = await fetch(`${env.PYTHON_API_URL}/session/connect`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ phone })
+  })
+  if (!resp.ok) {
+    return new Response('Failed to contact API', { status: 500 })
+  }
+  const data = await resp.json()
+  await env.DB.prepare(
+    'INSERT OR REPLACE INTO pending_sessions (account_id, phone, session, phone_code_hash) VALUES (?1, ?2, ?3, ?4)'
+  )
+    .bind(accountId, phone, data.session, data.phone_code_hash)
+    .run()
+  return new Response(JSON.stringify({ status: 'code_sent' }), {
+    headers: { 'Content-Type': 'application/json' }
+  })
+})
+
+// Verify telegram login code
+router.post('/session/verify', async (request: Request, env: Env) => {
+  const { phone, code } = await request.json()
+  const accountId = 1
+  const row = await env.DB.prepare(
+    'SELECT session, phone_code_hash FROM pending_sessions WHERE account_id=?1'
+  )
+    .bind(accountId)
+    .first<any>()
+
+  if (!row) {
+    return new Response('No pending session', { status: 400 })
+  }
+
+  const resp = await fetch(`${env.PYTHON_API_URL}/session/verify`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      phone,
+      code,
+      session: row.session,
+      phone_code_hash: row.phone_code_hash
+    })
+  })
+
+  const data = await resp.json()
+  if (!resp.ok) {
+    return new Response(JSON.stringify(data), { status: resp.status })
+  }
+
+  await env.DB.prepare(
+    'INSERT OR REPLACE INTO telegram_sessions (account_id, encrypted_session_data) VALUES (?1, ?2)'
+  )
+    .bind(accountId, data.session)
+    .run()
+
+  await env.DB.prepare('DELETE FROM pending_sessions WHERE account_id=?1')
+    .bind(accountId)
+    .run()
+
+  return new Response(JSON.stringify({ status: 'connected' }), {
+    headers: { 'Content-Type': 'application/json' }
   })
 })
 
