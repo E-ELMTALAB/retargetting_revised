@@ -8,6 +8,7 @@ export default function MainPage({ onLogout }) {
   return (
     <div className="flex h-screen">
       <aside className="w-60 bg-gray-100 p-4">
+
         <h2 className="text-xl mb-2 font-semibold">Menu</h2>
         <ul className="space-y-2">
           <li>
@@ -39,6 +40,7 @@ export default function MainPage({ onLogout }) {
             >
               Monitor
             </NavLink>
+
           </li>
           <li>
             <button className="text-red-600" onClick={onLogout}>Logout</button>
