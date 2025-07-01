@@ -7,8 +7,31 @@ import os
 
 app = Flask(__name__)
 
-API_ID = int(os.environ.get('API_ID', '0'))
-API_HASH = os.environ.get('API_HASH', '')
+
+@app.after_request
+def add_cors_headers(response):
+    """Add permissive CORS headers to all responses."""
+    response.headers['Access-Control-Allow-Origin'] = '*'
+    response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+    response.headers['Access-Control-Allow-Methods'] = 'GET,POST,OPTIONS'
+    return response
+
+
+@app.errorhandler(Exception)
+def handle_exception(e):
+    """Return JSON for any uncaught exceptions and log them."""
+    print('Unhandled error:', repr(e))
+    return jsonify({'error': str(e)}), 500
+
+# Telegram API credentials. In production these should be provided via
+# environment variables. We default to dummy values so the service does not
+# crash when the variables are missing.
+API_ID = int(os.environ.get('API_ID', '123456'))  # <-- Replace with your API ID
+API_HASH = os.environ.get(
+    'API_HASH', '0123456789abcdef0123456789abcdef'
+)  # <-- Replace with your API Hash
+
+print('Starting Python API with API_ID', API_ID)
 
 @app.route('/health', methods=['GET'])
 def health():
@@ -41,18 +64,29 @@ def execute_campaign():
 def session_connect():
     data = request.get_json(force=True)
     phone = data.get('phone')
+    print('API /session/connect phone', phone)
     if not phone:
         return jsonify({'error': 'phone required'}), 400
 
     async def _send_code():
         client = TelegramClient(StringSession(), API_ID, API_HASH)
         await client.connect()
-        result = await client.send_code_request(phone)
-        session_str = client.session.save()
+        try:
+            result = await client.send_code_request(phone)
+            session_str = client.session.save()
+        except Exception as e:
+            print('API send_code error', e)
+            await client.disconnect()
+            raise
         await client.disconnect()
         return session_str, result.phone_code_hash
 
-    session_str, phone_code_hash = asyncio.run(_send_code())
+    try:
+        session_str, phone_code_hash = asyncio.run(_send_code())
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+    print('API send_code result', session_str[:10], phone_code_hash)
     return jsonify({'session': session_str, 'phone_code_hash': phone_code_hash})
 
 
@@ -63,6 +97,7 @@ def session_verify():
     code = data.get('code')
     session_str = data.get('session')
     phone_code_hash = data.get('phone_code_hash')
+    print('API /session/verify phone', phone, 'code', code)
     if not all([phone, code, session_str, phone_code_hash]):
         return jsonify({'error': 'missing parameters'}), 400
 
@@ -74,13 +109,23 @@ def session_verify():
         except SessionPasswordNeededError:
             await client.disconnect()
             return None, 'PASSWORD_NEEDED'
+        except Exception as e:
+            print('API sign_in error', e)
+            await client.disconnect()
+            raise
         session_final = client.session.save()
         await client.disconnect()
         return session_final, None
 
-    session_final, err = asyncio.run(_sign_in())
+    try:
+        session_final, err = asyncio.run(_sign_in())
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
     if err:
+        print('API verify error', err)
         return jsonify({'error': err}), 400
+    print('API verify success', session_final[:10])
     return jsonify({'session': session_final})
 
 if __name__ == '__main__':
