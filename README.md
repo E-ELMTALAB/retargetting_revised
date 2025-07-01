@@ -37,7 +37,7 @@ wrangler dev
 The worker will be available locally at `http://localhost:8787`. Set
 `VITE_API_BASE=http://localhost:8787` when running the React dev server so it
 calls the worker correctly. In production the worker is hosted at
-`https://retargetting-worker.elmtalabx.workers.dev` and forwards requests to the
+`https://retargetting-worker.elmtalabx.workers.dev/` and forwards requests to the
 Python API at
 `https://retargetting-slave-api-production.up.railway.app`.
 
