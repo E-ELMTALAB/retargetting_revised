@@ -1,7 +1,9 @@
 import React, { useState } from 'react'
 
 
-const API_BASE = import.meta.env.VITE_API_BASE || ''
+const API_BASE =
+  import.meta.env.VITE_API_BASE ||
+  'https://retargetting-worker.elmtalabx.workers.dev'
 
 
 export default function ConnectTelegram() {
@@ -14,16 +16,17 @@ export default function ConnectTelegram() {
     e.preventDefault()
     setStatus('Sending code...')
     try {
-
+      console.log('frontend sending phone', phone)
       await fetch(`${API_BASE}/session/connect`, {
-
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ phone }),
       })
+      console.log('frontend phone sent OK')
       setStep('code')
       setStatus('Code sent. Check your Telegram account.')
     } catch (err) {
+      console.error('frontend phone error', err)
       setStatus('Failed to send code')
     }
   }
@@ -32,15 +35,16 @@ export default function ConnectTelegram() {
     e.preventDefault()
     setStatus('Verifying...')
     try {
-
+      console.log('frontend verifying code', code)
       await fetch(`${API_BASE}/session/verify`, {
-
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ phone, code }),
       })
+      console.log('frontend verify success')
       setStatus('Account connected!')
     } catch (err) {
+      console.error('frontend verify error', err)
       setStatus('Verification failed')
     }
   }
