@@ -4,6 +4,7 @@ import CampaignEditor from './CampaignEditor'
 import AnalyticsDashboard from './AnalyticsDashboard'
 import CampaignMonitor from './CampaignMonitor'
 import ConnectTelegram from './ConnectTelegram'
+import CategoryManager from './CategoryManager'
 
 export default function MainPage({ onLogout }) {
   return (
@@ -45,6 +46,16 @@ export default function MainPage({ onLogout }) {
           </li>
           <li>
             <NavLink
+              to="/categories"
+              className={({ isActive }) =>
+                `block px-2 py-1 rounded ${isActive ? 'bg-blue-500 text-white' : 'text-blue-600'}`
+              }
+            >
+              Categories
+            </NavLink>
+          </li>
+          <li>
+            <NavLink
               to="/connect"
               className={({ isActive }) =>
                 `block px-2 py-1 rounded ${isActive ? 'bg-blue-500 text-white' : 'text-blue-600'}`
@@ -66,6 +77,7 @@ export default function MainPage({ onLogout }) {
           <Route path="/analytics" element={<AnalyticsDashboard />} />
           <Route path="/monitor" element={<CampaignMonitor />} />
           <Route path="/connect" element={<ConnectTelegram />} />
+          <Route path="/categories" element={<CategoryManager />} />
         </Routes>
       </main>
     </div>
