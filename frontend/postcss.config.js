@@ -1,6 +1,6 @@
 module.exports = {
   plugins: {
-    '@tailwindcss/postcss': {},
-    autoprefixer: {},
-  },
+    // Remove tailwindcss if using CDN
+    // autoprefixer: {}, // Only if you need it
+  }
 }
