@@ -7,6 +7,15 @@ import os
 
 app = Flask(__name__)
 
+
+@app.after_request
+def add_cors_headers(response):
+    """Add permissive CORS headers to all responses."""
+    response.headers['Access-Control-Allow-Origin'] = '*'
+    response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+    response.headers['Access-Control-Allow-Methods'] = 'GET,POST,OPTIONS'
+    return response
+
 API_ID = int(os.environ.get('API_ID', '0'))
 API_HASH = os.environ.get('API_HASH', '')
 
@@ -41,6 +50,7 @@ def execute_campaign():
 def session_connect():
     data = request.get_json(force=True)
     phone = data.get('phone')
+    print('API /session/connect phone', phone)
     if not phone:
         return jsonify({'error': 'phone required'}), 400
 
@@ -53,6 +63,7 @@ def session_connect():
         return session_str, result.phone_code_hash
 
     session_str, phone_code_hash = asyncio.run(_send_code())
+    print('API send_code result', session_str[:10], phone_code_hash)
     return jsonify({'session': session_str, 'phone_code_hash': phone_code_hash})
 
 
@@ -63,6 +74,7 @@ def session_verify():
     code = data.get('code')
     session_str = data.get('session')
     phone_code_hash = data.get('phone_code_hash')
+    print('API /session/verify phone', phone, 'code', code)
     if not all([phone, code, session_str, phone_code_hash]):
         return jsonify({'error': 'missing parameters'}), 400
 
@@ -80,7 +92,9 @@ def session_verify():
 
     session_final, err = asyncio.run(_sign_in())
     if err:
+        print('API verify error', err)
         return jsonify({'error': err}), 400
+    print('API verify success', session_final[:10])
     return jsonify({'session': session_final})
 
 if __name__ == '__main__':
