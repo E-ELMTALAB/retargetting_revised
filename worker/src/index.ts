@@ -103,5 +103,7 @@ router.post('/campaigns/:id/start', async ({ params }) => {
 router.all('*', () => new Response('Not Found', { status: 404 }))
 
 export default {
-  fetch: (request: Request) => router.handle(request),
+  async fetch(request: Request, env: Env, ctx: ExecutionContext) {
+    return router.handle(request, env, ctx)
+  }
 }

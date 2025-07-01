@@ -1,6 +1,7 @@
 name = "retargetting-worker"
 main = "dist/index.js"
 compatibility_date = "2023-05-18"
+compatibility_flags = ["nodejs_compat"]
 
 [build]
 command = "npm run build"
@@ -11,4 +12,4 @@ PYTHON_API_URL = "http://localhost:5000"
 [[d1_databases]]
 binding = "DB"
 database_name = "retargetting"
-database_id = "RETARGETTING_DB"
+database_id = "53f8a933-9580-4051-aed6-303d2d90e4ac"

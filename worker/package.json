@@ -2,13 +2,13 @@
   "name": "retargetting-worker",
   "type": "module",
   "devDependencies": {
-    "typescript": "^5.0.0",
     "@cloudflare/workers-types": "^4.20230518.0",
     "esbuild": "^0.17.19",
-    "itty-router": "^4.0.5"
+    "itty-router": "^4.2.2",
+    "typescript": "^5.0.0"
   },
   "scripts": {
-    "build": "esbuild src/index.ts --bundle --outfile=dist/index.js",
+    "build": "esbuild src/index.ts --bundle --outfile=dist/index.js --format=esm",
     "start": "wrangler dev"
   }
 }
