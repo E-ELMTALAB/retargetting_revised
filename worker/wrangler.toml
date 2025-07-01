@@ -7,7 +7,7 @@ compatibility_flags = ["nodejs_compat"]
 command = "npm run build"
 
 [vars]
-PYTHON_API_URL = "http://localhost:5000"
+PYTHON_API_URL = "https://retargetting-slave-api-production.up.railway.app"
 
 [[d1_databases]]
 binding = "DB"
