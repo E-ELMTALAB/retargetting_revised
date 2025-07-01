@@ -2,12 +2,18 @@ import React, { useEffect, useState } from 'react'
 
 const API_BASE =
   import.meta.env.VITE_API_BASE ||
-  'https://retargetting-worker.elmtalabx.workers.dev'
+
+  'https://retargetting-worker.elmtalabx.workers.dev/'
+
 
 export default function CategoryManager() {
   const [categories, setCategories] = useState([])
   const [name, setName] = useState('')
   const [keywords, setKeywords] = useState('')
+
+  const [description, setDescription] = useState('')
+  const [examples, setExamples] = useState('')
+
   const [status, setStatus] = useState('')
 
   const fetchCategories = async () => {
@@ -31,13 +37,27 @@ export default function CategoryManager() {
       const resp = await fetch(`${API_BASE}/categories`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, keywords: keywords.split(',').map(k => k.trim()).filter(k => k) })
+
+        body: JSON.stringify({
+          name,
+          keywords: keywords.split(',').map(k => k.trim()).filter(k => k),
+          description,
+          examples: examples
+            .split('\n')
+            .map(l => l.trim())
+            .filter(l => l),
+        })
+
       })
       const data = await resp.json()
       if (!resp.ok) throw new Error(JSON.stringify(data))
       setStatus('Saved')
       setName('')
       setKeywords('')
+
+      setDescription('')
+      setExamples('')
+
       fetchCategories()
     } catch (err) {
       console.error('create category', err)
@@ -63,6 +83,20 @@ export default function CategoryManager() {
           value={keywords}
           onChange={e => setKeywords(e.target.value)}
         />
+
+        <textarea
+          placeholder="AI chat description"
+          className="border p-2 w-full"
+          value={description}
+          onChange={e => setDescription(e.target.value)}
+        />
+        <textarea
+          placeholder="Example chats (one per line)"
+          className="border p-2 w-full"
+          value={examples}
+          onChange={e => setExamples(e.target.value)}
+        />
+
         <button type="submit" className="bg-blue-600 text-white px-3 py-1 rounded">Add</button>
         {status && <p className="text-sm text-gray-600">{status}</p>}
       </form>
@@ -74,6 +108,11 @@ export default function CategoryManager() {
             <p className="text-sm text-gray-600">
               {(JSON.parse(c.keywords_json || '[]')).join(', ')}
             </p>
+
+            {c.description && (
+              <p className="text-sm text-gray-500 mt-1">{c.description}</p>
+            )}
+
           </div>
         ))}
       </div>
