@@ -6,6 +6,10 @@ const API_BASE =
   'https://retargetting-worker.elmtalabx.workers.dev'
 
 
+console.log('Using API base', API_BASE)
+
+
+
 export default function ConnectTelegram() {
   const [step, setStep] = useState('phone')
   const [phone, setPhone] = useState('')
@@ -17,12 +21,19 @@ export default function ConnectTelegram() {
     setStatus('Sending code...')
     try {
       console.log('frontend sending phone', phone)
-      await fetch(`${API_BASE}/session/connect`, {
+
+      const resp = await fetch(`${API_BASE}/session/connect`, {
+
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ phone }),
       })
-      console.log('frontend phone sent OK')
+
+      console.log('frontend connect status', resp.status)
+      const data = await resp.json().catch(() => ({}))
+      console.log('frontend connect body', data)
+      if (!resp.ok) throw new Error(JSON.stringify(data))
+
       setStep('code')
       setStatus('Code sent. Check your Telegram account.')
     } catch (err) {
@@ -36,11 +47,19 @@ export default function ConnectTelegram() {
     setStatus('Verifying...')
     try {
       console.log('frontend verifying code', code)
-      await fetch(`${API_BASE}/session/verify`, {
+
+      const resp = await fetch(`${API_BASE}/session/verify`, {
+
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ phone, code }),
       })
+
+      console.log('frontend verify status', resp.status)
+      const data = await resp.json().catch(() => ({}))
+      console.log('frontend verify body', data)
+      if (!resp.ok) throw new Error(JSON.stringify(data))
+
       console.log('frontend verify success')
       setStatus('Account connected!')
     } catch (err) {

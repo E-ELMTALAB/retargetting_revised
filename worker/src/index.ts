@@ -26,17 +26,31 @@ router.post('/session/connect', async (request: Request, env: Env) => {
   const { phone } = await request.json()
   console.log('worker /session/connect phone', phone)
   const accountId = 1
-  const resp = await fetch(`${env.PYTHON_API_URL}/session/connect`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ phone })
-  })
-  console.log('python api response status', resp.status)
-  if (!resp.ok) {
+
+  let resp
+  try {
+    resp = await fetch(`${env.PYTHON_API_URL}/session/connect`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phone })
+    })
+  } catch (err) {
+    console.error('worker connect fetch error', err)
     return new Response('Failed to contact API', { status: 500 })
   }
-  const data = await resp.json()
+  console.log('python api response status', resp.status)
+  let data
+  try {
+    data = await resp.json()
+  } catch (err) {
+    console.error('worker connect json error', err)
+    return new Response('Bad response from API', { status: 500 })
+  }
   console.log('python api response body', data)
+  if (!resp.ok) {
+    return new Response(JSON.stringify(data), { status: resp.status })
+  }
+
   await env.DB.prepare(
     'INSERT OR REPLACE INTO pending_sessions (account_id, phone, session, phone_code_hash) VALUES (?1, ?2, ?3, ?4)'
   )
@@ -62,20 +76,34 @@ router.post('/session/verify', async (request: Request, env: Env) => {
     return new Response('No pending session', { status: 400 })
   }
 
-  const resp = await fetch(`${env.PYTHON_API_URL}/session/verify`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      phone,
-      code,
-      session: row.session,
-      phone_code_hash: row.phone_code_hash
+  let resp
+  try {
+    resp = await fetch(`${env.PYTHON_API_URL}/session/verify`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        phone,
+        code,
+        session: row.session,
+        phone_code_hash: row.phone_code_hash
+      })
     })
-  })
+  } catch (err) {
+    console.error('worker verify fetch error', err)
+    return new Response('Failed to contact API', { status: 500 })
+  }
 
   console.log('python api verify status', resp.status)
 
-  const data = await resp.json()
+
+  let data
+  try {
+    data = await resp.json()
+  } catch (err) {
+    console.error('worker verify json error', err)
+    return new Response('Bad response from API', { status: 500 })
+  }
+
   console.log('python api verify body', data)
   if (!resp.ok) {
     return new Response(JSON.stringify(data), { status: resp.status })
