@@ -26,6 +26,7 @@ router.post('/session/connect', async (request: Request, env: Env) => {
   const { phone } = await request.json()
   console.log('worker /session/connect phone', phone)
   const accountId = 1
+
   let resp
   try {
     resp = await fetch(`${env.PYTHON_API_URL}/session/connect`, {
@@ -49,6 +50,7 @@ router.post('/session/connect', async (request: Request, env: Env) => {
   if (!resp.ok) {
     return new Response(JSON.stringify(data), { status: resp.status })
   }
+
   await env.DB.prepare(
     'INSERT OR REPLACE INTO pending_sessions (account_id, phone, session, phone_code_hash) VALUES (?1, ?2, ?3, ?4)'
   )
@@ -93,6 +95,7 @@ router.post('/session/verify', async (request: Request, env: Env) => {
 
   console.log('python api verify status', resp.status)
 
+
   let data
   try {
     data = await resp.json()
@@ -100,6 +103,7 @@ router.post('/session/verify', async (request: Request, env: Env) => {
     console.error('worker verify json error', err)
     return new Response('Bad response from API', { status: 500 })
   }
+
   console.log('python api verify body', data)
   if (!resp.ok) {
     return new Response(JSON.stringify(data), { status: resp.status })

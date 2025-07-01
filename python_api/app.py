@@ -17,6 +17,7 @@ def add_cors_headers(response):
     return response
 
 
+
 @app.errorhandler(Exception)
 def handle_exception(e):
     """Return JSON for any uncaught exceptions and log them."""
@@ -32,6 +33,7 @@ API_HASH = os.environ.get(
 )  # <-- Replace with your API Hash
 
 print('Starting Python API with API_ID', API_ID)
+
 
 @app.route('/health', methods=['GET'])
 def health():
@@ -81,10 +83,12 @@ def session_connect():
         await client.disconnect()
         return session_str, result.phone_code_hash
 
+
     try:
         session_str, phone_code_hash = asyncio.run(_send_code())
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
 
     print('API send_code result', session_str[:10], phone_code_hash)
     return jsonify({'session': session_str, 'phone_code_hash': phone_code_hash})
