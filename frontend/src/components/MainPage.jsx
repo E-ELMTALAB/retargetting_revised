@@ -9,15 +9,17 @@ import CategoryManager from './CategoryManager'
 export default function MainPage({ onLogout }) {
   return (
     <div className="flex h-screen">
-      <aside className="w-60 bg-gray-100 p-4">
+      <aside className="w-64 bg-gray-100 p-6 space-y-4">
 
-        <h2 className="text-xl mb-2 font-semibold">Menu</h2>
-        <ul className="space-y-2">
+        <h2 className="text-2xl font-bold text-gray-700">Menu</h2>
+        <ul className="space-y-1">
           <li>
             <NavLink
               to="/editor"
               className={({ isActive }) =>
-                `block px-2 py-1 rounded ${isActive ? 'bg-blue-500 text-white' : 'text-blue-600'}`
+                `block px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                  isActive ? 'bg-blue-600 text-white' : 'text-gray-700 hover:bg-blue-50'
+                }`
               }
             >
               Campaign Editor
@@ -27,7 +29,9 @@ export default function MainPage({ onLogout }) {
             <NavLink
               to="/analytics"
               className={({ isActive }) =>
-                `block px-2 py-1 rounded ${isActive ? 'bg-blue-500 text-white' : 'text-blue-600'}`
+                `block px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                  isActive ? 'bg-blue-600 text-white' : 'text-gray-700 hover:bg-blue-50'
+                }`
               }
             >
               Analytics
@@ -37,7 +41,9 @@ export default function MainPage({ onLogout }) {
             <NavLink
               to="/monitor"
               className={({ isActive }) =>
-                `block px-2 py-1 rounded ${isActive ? 'bg-blue-500 text-white' : 'text-blue-600'}`
+                `block px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                  isActive ? 'bg-blue-600 text-white' : 'text-gray-700 hover:bg-blue-50'
+                }`
               }
             >
               Monitor
@@ -48,7 +54,11 @@ export default function MainPage({ onLogout }) {
             <NavLink
               to="/categories"
               className={({ isActive }) =>
-                `block px-2 py-1 rounded ${isActive ? 'bg-blue-500 text-white' : 'text-blue-600'}`
+
+                `block px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                  isActive ? 'bg-blue-600 text-white' : 'text-gray-700 hover:bg-blue-50'
+                }`
+
               }
             >
               Categories
@@ -58,7 +68,9 @@ export default function MainPage({ onLogout }) {
             <NavLink
               to="/connect"
               className={({ isActive }) =>
-                `block px-2 py-1 rounded ${isActive ? 'bg-blue-500 text-white' : 'text-blue-600'}`
+                `block px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                  isActive ? 'bg-blue-600 text-white' : 'text-gray-700 hover:bg-blue-50'
+                }`
               }
             >
               Connect Telegram
@@ -66,7 +78,12 @@ export default function MainPage({ onLogout }) {
 
           </li>
           <li>
-            <button className="text-red-600" onClick={onLogout}>Logout</button>
+            <button
+              className="text-red-600 text-sm hover:underline"
+              onClick={onLogout}
+            >
+              Logout
+            </button>
           </li>
         </ul>
       </aside>
