@@ -27,10 +27,8 @@ def handle_exception(e):
 # Telegram API credentials. In production these should be provided via
 # environment variables. We default to dummy values so the service does not
 # crash when the variables are missing.
-API_ID = int(os.environ.get('API_ID', '123456'))  # <-- Replace with your API ID
-API_HASH = os.environ.get(
-    'API_HASH', '0123456789abcdef0123456789abcdef'
-)  # <-- Replace with your API Hash
+API_ID = 123456  # <-- Replace with your API ID
+API_HASH = '0123456789abcdef0123456789abcdef'  # <-- Replace with your API Hash
 
 print('Starting Python API with API_ID', API_ID)
 
@@ -71,6 +69,8 @@ def session_connect():
         return jsonify({'error': 'phone required'}), 400
 
     async def _send_code():
+        API_ID = 123456  # <-- Replace with your API ID
+        API_HASH = '0123456789abcdef0123456789abcdef'  # <-- Replace with your API Hash
         client = TelegramClient(StringSession(), API_ID, API_HASH)
         await client.connect()
         try:

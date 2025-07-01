@@ -26,7 +26,7 @@ if __name__ == '__main__':
     check(
         f"{WORKER_BASE}/session/connect",
         method='post',
-        json={'phone': '+10000000000'}
+        json={'phone': '+989033338607'}
     )
 
     # Frontend main page
