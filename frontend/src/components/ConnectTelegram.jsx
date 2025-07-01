@@ -1,6 +1,8 @@
 import React, { useState } from 'react'
 
+
 const API_BASE = import.meta.env.VITE_API_BASE || ''
+
 
 export default function ConnectTelegram() {
   const [step, setStep] = useState('phone')
@@ -12,7 +14,9 @@ export default function ConnectTelegram() {
     e.preventDefault()
     setStatus('Sending code...')
     try {
+
       await fetch(`${API_BASE}/session/connect`, {
+
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ phone }),
@@ -28,7 +32,9 @@ export default function ConnectTelegram() {
     e.preventDefault()
     setStatus('Verifying...')
     try {
+
       await fetch(`${API_BASE}/session/verify`, {
+
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ phone, code }),

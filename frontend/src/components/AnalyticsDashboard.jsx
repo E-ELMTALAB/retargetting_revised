@@ -71,6 +71,7 @@ export default function AnalyticsDashboard() {
   }
 
   return (
+
     <div className="p-4 space-y-6">
       <h2 className="text-2xl mb-4 font-semibold">Analytics Dashboard</h2>
 
@@ -118,6 +119,7 @@ export default function AnalyticsDashboard() {
           <li>Suggested Follow-up: Send VIP exclusive</li>
         </ul>
       </div>
+
     </div>
   )
 }

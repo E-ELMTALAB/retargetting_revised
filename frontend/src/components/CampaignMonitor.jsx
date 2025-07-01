@@ -18,6 +18,7 @@ export default function CampaignMonitor() {
   }, [])
 
   return (
+
     <div className="p-4 space-y-4">
       <h2 className="text-2xl mb-2 font-semibold">Campaign Monitor</h2>
 
@@ -76,6 +77,7 @@ export default function CampaignMonitor() {
           </ul>
         )}
       </div>
+
     </div>
   )
 }
