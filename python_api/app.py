@@ -135,7 +135,9 @@ def session_verify():
 
 @app.route('/classify', methods=['POST'])
 def classify_text():
+
     """Classify text based on provided categories and keywords or examples."""
+
     data = request.get_json(force=True)
     text = data.get('text', '')
     categories = data.get('categories', [])
@@ -144,6 +146,7 @@ def classify_text():
     for cat in categories:
         name = cat.get('name')
         kws = cat.get('keywords', [])
+
         examples = cat.get('examples', [])
         found = False
         for kw in kws:
@@ -156,6 +159,7 @@ def classify_text():
                 if ex.lower() in text_lower:
                     matched.append(name)
                     break
+
     return jsonify({'matches': matched})
 
 if __name__ == '__main__':

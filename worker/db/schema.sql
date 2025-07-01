@@ -53,6 +53,7 @@ CREATE TABLE categories (
     keywords_json TEXT,
     description TEXT,
     sample_chats_json TEXT,
+
     FOREIGN KEY (account_id) REFERENCES accounts(id)
 );
 
