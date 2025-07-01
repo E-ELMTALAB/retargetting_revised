@@ -36,7 +36,13 @@ wrangler dev
 
 The worker will be available locally at `http://localhost:8787`. Set
 `VITE_API_BASE=http://localhost:8787` when running the React dev server so it
-calls the worker correctly.
+calls the worker correctly. In production the worker is hosted at
+`https://retargetting-worker.elmtalabx.workers.dev` and forwards requests to the
+Python API at
+`https://retargetting-slave-api-production.up.railway.app`.
+
+The frontend is served from `https://retargetting-revised.pages.dev`. If
+`VITE_API_BASE` is not provided, it will default to the production worker URL.
 
 ### Frontend
 ```bash
@@ -45,3 +51,14 @@ npm --prefix frontend run start
 ```
 
 The frontend provides placeholder components for editing campaigns, viewing analytics, and monitoring progress.
+
+## Testing APIs
+
+Basic connectivity tests can be run with:
+
+```bash
+./tests/run_all.sh
+```
+
+Environment variables `FRONTEND_BASE`, `WORKER_BASE` and `PYTHON_API_BASE` can
+be set to override the default production endpoints when testing locally.

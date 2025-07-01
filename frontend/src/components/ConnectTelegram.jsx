@@ -1,7 +1,9 @@
 import React, { useState } from 'react'
 
 
-const API_BASE = import.meta.env.VITE_API_BASE || ''
+const API_BASE =
+  import.meta.env.VITE_API_BASE ||
+  'https://retargetting-worker.elmtalabx.workers.dev'
 
 
 export default function ConnectTelegram() {
