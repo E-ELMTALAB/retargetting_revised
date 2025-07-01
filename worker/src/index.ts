@@ -140,6 +140,33 @@ router.post('/campaigns/:id/start', async ({ params }) => {
   })
 })
 
+// List categories
+router.get('/categories', async (request: Request, env: Env) => {
+  const accountId = 1
+  const { results } = await env.DB.prepare(
+    'SELECT id, name, keywords_json FROM categories WHERE account_id=?1'
+  )
+    .bind(accountId)
+    .all<any>()
+  return new Response(JSON.stringify({ categories: results }), {
+    headers: { 'Content-Type': 'application/json' },
+  })
+})
+
+// Create category
+router.post('/categories', async (request: Request, env: Env) => {
+  const { name, keywords } = await request.json()
+  const accountId = 1
+  const res = await env.DB.prepare(
+    'INSERT INTO categories (account_id, name, keywords_json) VALUES (?1, ?2, ?3)'
+  )
+    .bind(accountId, name, JSON.stringify(keywords || []))
+    .run()
+  return new Response(JSON.stringify({ id: res.lastRowId }), {
+    headers: { 'Content-Type': 'application/json' },
+  })
+})
+
 // Default route
 router.all('*', () => new Response('Not Found', { status: 404 }))
 
