@@ -26,7 +26,7 @@ Chart.register(
 export default function AnalyticsDashboard() {
   const API_BASE =
     import.meta.env.VITE_API_BASE ||
-    'https://retargetting-worker.elmtalabx.workers.dev/'
+    'https://retargetting-worker.elmtalabx.workers.dev'
 
   const [metrics, setMetrics] = useState([])
   const [revenueData, setRevenueData] = useState({ labels: [], datasets: [] })

@@ -23,8 +23,8 @@ python app.py
 ### Create D1 Database
 ```bash
 wrangler d1 create retargetting
-wrangler d1 execute retargetting --file=worker/db/schema.sql
-wrangler d1 execute retargetting --file=worker/db/seed.sql
+wrangler d1 execute retargetting --file=db/schema.sql
+wrangler d1 execute retargetting --file=db/seed.sql
 ```
 If you already created the database earlier, run `wrangler d1 delete retargetting` first to start from a clean state.
 
