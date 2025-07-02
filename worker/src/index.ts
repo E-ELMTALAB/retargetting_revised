@@ -171,7 +171,6 @@ router.post('/categories', async (request: Request, env: Env) => {
   })
 })
 
-
 // Analytics summary
 router.get('/analytics/summary', async (request: Request, env: Env) => {
   const accountId = 1
@@ -247,7 +246,16 @@ export default {
     if (request.method === 'OPTIONS') {
       return new Response('', { status: 204, headers: corsHeaders })
     }
-    const resp = await router.handle(request, env, ctx)
+    let resp: Response
+    try {
+      resp = await router.handle(request, env, ctx)
+      if (!resp) {
+        resp = new Response('Not Found', { status: 404 })
+      }
+    } catch (err) {
+      console.error('router error', err)
+      resp = new Response('Internal Error', { status: 500 })
+    }
     resp.headers.set('Access-Control-Allow-Origin', '*')
     resp.headers.set('Access-Control-Allow-Headers', 'Content-Type')
     resp.headers.set('Access-Control-Allow-Methods', 'GET,POST,OPTIONS')
