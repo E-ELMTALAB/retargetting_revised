@@ -145,6 +145,7 @@ router.post('/campaigns/:id/start', async ({ params }) => {
 // List categories
 router.get('/categories', async (request: Request, env: Env) => {
   const accountId = 1
+
   console.log('GET /categories account', accountId)
   const { results } = await env.DB.prepare(
     'SELECT id, name, keywords_json, description, sample_chats_json FROM categories WHERE account_id=?1'
@@ -152,6 +153,7 @@ router.get('/categories', async (request: Request, env: Env) => {
     .bind(accountId)
     .all<any>()
   console.log('categories results', results)
+
   return new Response(JSON.stringify({ categories: results }), {
     headers: { 'Content-Type': 'application/json' },
   })
@@ -159,15 +161,19 @@ router.get('/categories', async (request: Request, env: Env) => {
 
 // Create category
 router.post('/categories', async (request: Request, env: Env) => {
+
   const { name, keywords, description, examples } = await request.json()
   const accountId = 1
   console.log('POST /categories', { name, keywords, description, examples })
+
   const res = await env.DB.prepare(
     'INSERT INTO categories (account_id, name, keywords_json, description, sample_chats_json) VALUES (?1, ?2, ?3, ?4, ?5)'
   )
     .bind(accountId, name, JSON.stringify(keywords || []), description || '', JSON.stringify(examples || []))
+
     .run()
   console.log('inserted category id', res.lastRowId)
+
   return new Response(JSON.stringify({ id: res.lastRowId }), {
     headers: { 'Content-Type': 'application/json' },
   })
@@ -176,6 +182,7 @@ router.post('/categories', async (request: Request, env: Env) => {
 // Analytics summary
 router.get('/analytics/summary', async (request: Request, env: Env) => {
   const accountId = 1
+
   console.log('GET /analytics/summary account', accountId)
   try {
     const totalRow = await env.DB.prepare(
@@ -251,6 +258,7 @@ router.get('/analytics/summary', async (request: Request, env: Env) => {
       headers: { 'Content-Type': 'application/json' },
     })
   }
+
 })
 
 router.get('/campaigns/:id/analytics', async ({ params }, env: Env) => {
@@ -264,6 +272,7 @@ router.get('/campaigns/:id/analytics', async ({ params }, env: Env) => {
   })
 })
 
+
 // Default route
 router.all('*', () => new Response('Not Found', { status: 404 }))
 
@@ -272,7 +281,9 @@ export default {
     if (request.method === 'OPTIONS') {
       return new Response('', { status: 204, headers: corsHeaders })
     }
+
     console.log('incoming request', request.method, new URL(request.url).pathname)
+
     let resp: Response
     try {
       resp = await router.handle(request, env, ctx)

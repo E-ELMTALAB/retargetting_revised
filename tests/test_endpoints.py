@@ -2,7 +2,7 @@ import os
 import requests
 
 FRONTEND_BASE = os.environ.get('FRONTEND_BASE', 'https://retargetting-revised.pages.dev')
-WORKER_BASE = os.environ.get('WORKER_BASE', 'https://retargetting-worker.elmtalabx.workers.dev')
+WORKER_BASE = os.environ.get('WORKER_BASE', 'https://retargetting-worker.elmtalabx.workers.dev/')
 PYTHON_API_BASE = os.environ.get('PYTHON_API_BASE', 'https://retargetting-slave-api-production.up.railway.app')
 
 

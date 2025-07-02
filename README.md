@@ -23,8 +23,10 @@ python app.py
 ### Create D1 Database
 ```bash
 wrangler d1 create retargetting
+
 wrangler d1 execute retargetting --file=worker/db/schema.sql
 wrangler d1 execute retargetting --file=worker/db/seed.sql
+
 ```
 If you already created the database earlier, run `wrangler d1 delete retargetting` first to start from a clean state.
 
@@ -39,7 +41,7 @@ wrangler dev
 The worker will be available locally at `http://localhost:8787`. Set
 `VITE_API_BASE=http://localhost:8787` when running the React dev server so it
 calls the worker correctly. In production the worker is hosted at
-`https://retargetting-worker.elmtalabx.workers.dev` and forwards requests to the
+`https://retargetting-worker.elmtalabx.workers.dev/` and forwards requests to the
 Python API at
 `https://retargetting-slave-api-production.up.railway.app`.
 
