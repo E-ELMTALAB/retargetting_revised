@@ -171,6 +171,74 @@ router.post('/categories', async (request: Request, env: Env) => {
   })
 })
 
+
+// Analytics summary
+router.get('/analytics/summary', async (request: Request, env: Env) => {
+  const accountId = 1
+  const totalRow = await env.DB.prepare(
+    'SELECT COUNT(*) as cnt FROM sent_logs WHERE account_id=?1'
+  )
+    .bind(accountId)
+    .first<any>()
+  const successRow = await env.DB.prepare(
+    "SELECT COUNT(*) as cnt FROM sent_logs WHERE account_id=?1 AND status='sent'"
+  )
+    .bind(accountId)
+    .first<any>()
+  const failRow = await env.DB.prepare(
+    "SELECT COUNT(*) as cnt FROM sent_logs WHERE account_id=?1 AND status!='sent'"
+  )
+    .bind(accountId)
+    .first<any>()
+  const revenueRow = await env.DB.prepare(
+    'SELECT SUM(revenue) as rev FROM trackable_links tl JOIN campaigns c ON c.id=tl.campaign_id WHERE c.account_id=?1'
+  )
+    .bind(accountId)
+    .first<any>()
+  const categoryRows = await env.DB.prepare(
+    'SELECT category, COUNT(*) as count FROM customer_categories WHERE account_id=?1 GROUP BY category'
+  )
+    .bind(accountId)
+    .all<any>()
+  const campaignRows = await env.DB.prepare(
+    'SELECT c.id, c.message_text, COALESCE(a.total_sent,0) as total_sent FROM campaigns c LEFT JOIN campaign_analytics a ON c.id=a.campaign_id WHERE c.account_id=?1'
+  )
+    .bind(accountId)
+    .all<any>()
+  const revenueDayRows = await env.DB.prepare(
+    'SELECT strftime("%Y-%m-%d", tl.created_at) as day, SUM(tl.revenue) as rev FROM trackable_links tl JOIN campaigns c ON c.id=tl.campaign_id WHERE c.account_id=?1 GROUP BY day ORDER BY day'
+  )
+    .bind(accountId)
+    .all<any>()
+  const metrics = {
+    messages_sent: totalRow?.cnt || 0,
+    successes: successRow?.cnt || 0,
+    failures: failRow?.cnt || 0,
+    revenue: revenueRow?.rev || 0,
+  }
+  return new Response(
+    JSON.stringify({
+      metrics,
+      categories: categoryRows,
+      campaigns: campaignRows,
+      revenueByDay: revenueDayRows,
+    }),
+    { headers: { 'Content-Type': 'application/json' } }
+  )
+})
+
+router.get('/campaigns/:id/analytics', async ({ params }, env: Env) => {
+  const row = await env.DB.prepare(
+    'SELECT * FROM campaign_analytics WHERE campaign_id=?1'
+  )
+    .bind(params?.id)
+    .first<any>()
+  return new Response(JSON.stringify({ analytics: row }), {
+    headers: { 'Content-Type': 'application/json' },
+  })
+})
+
+
 // Default route
 router.all('*', () => new Response('Not Found', { status: 404 }))
 
