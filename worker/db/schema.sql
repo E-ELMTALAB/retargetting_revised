@@ -45,6 +45,17 @@ CREATE TABLE customer_categories (
     FOREIGN KEY (account_id) REFERENCES accounts(id)
 );
 
+-- Definitions for available customer categories
+CREATE TABLE categories (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    account_id INTEGER NOT NULL,
+    name TEXT,
+    keywords_json TEXT,
+    description TEXT,
+    sample_chats_json TEXT,
+    FOREIGN KEY (account_id) REFERENCES accounts(id)
+);
+
 CREATE TABLE trackable_links (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     campaign_id INTEGER NOT NULL,
@@ -52,6 +63,7 @@ CREATE TABLE trackable_links (
     tracking_code TEXT,
     clicks INTEGER DEFAULT 0,
     revenue REAL DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (campaign_id) REFERENCES campaigns(id)
 );
 
@@ -62,6 +74,7 @@ CREATE TABLE campaign_analytics (
     total_clicks INTEGER,
     total_revenue REAL,
     best_performing_lines TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (campaign_id) REFERENCES campaigns(id)
 );
 
