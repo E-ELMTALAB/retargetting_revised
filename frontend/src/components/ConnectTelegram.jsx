@@ -3,7 +3,7 @@ import React, { useState } from 'react'
 
 const API_BASE =
   import.meta.env.VITE_API_BASE ||
-  'https://retargetting-worker.elmtalabx.workers.dev'
+  'https://retargetting-worker.elmtalabx.workers.dev/'
 
 
 console.log('Using API base', API_BASE)
