@@ -126,6 +126,7 @@ router.post('/session/verify', async (request: Request, env: Env) => {
 
 // Campaign creation placeholder
 router.post('/campaigns', async (request: Request) => {
+  console.log('POST /campaigns')
   // TODO: validate JWT and create campaign in D1
   return new Response(JSON.stringify({ status: 'created' }), {
     headers: { 'Content-Type': 'application/json' },
@@ -134,8 +135,131 @@ router.post('/campaigns', async (request: Request) => {
 
 // Start campaign - schedule job
 router.post('/campaigns/:id/start', async ({ params }) => {
+  console.log('POST /campaigns/:id/start', params?.id)
   // TODO: enqueue job payload to worker queue for Python API
   return new Response(JSON.stringify({ status: 'scheduled', id: params?.id }), {
+    headers: { 'Content-Type': 'application/json' },
+  })
+})
+
+// List categories
+router.get('/categories', async (request: Request, env: Env) => {
+  const accountId = 1
+  console.log('GET /categories account', accountId)
+  const { results } = await env.DB.prepare(
+    'SELECT id, name, keywords_json, description, sample_chats_json FROM categories WHERE account_id=?1'
+  )
+    .bind(accountId)
+    .all<any>()
+  console.log('categories results', results)
+  return new Response(JSON.stringify({ categories: results }), {
+    headers: { 'Content-Type': 'application/json' },
+  })
+})
+
+// Create category
+router.post('/categories', async (request: Request, env: Env) => {
+  const { name, keywords, description, examples } = await request.json()
+  const accountId = 1
+  console.log('POST /categories', { name, keywords, description, examples })
+  const res = await env.DB.prepare(
+    'INSERT INTO categories (account_id, name, keywords_json, description, sample_chats_json) VALUES (?1, ?2, ?3, ?4, ?5)'
+  )
+    .bind(accountId, name, JSON.stringify(keywords || []), description || '', JSON.stringify(examples || []))
+    .run()
+  console.log('inserted category id', res.lastRowId)
+  return new Response(JSON.stringify({ id: res.lastRowId }), {
+    headers: { 'Content-Type': 'application/json' },
+  })
+})
+
+// Analytics summary
+router.get('/analytics/summary', async (request: Request, env: Env) => {
+  const accountId = 1
+  console.log('GET /analytics/summary account', accountId)
+  try {
+    const totalRow = await env.DB.prepare(
+      'SELECT COUNT(*) as cnt FROM sent_logs WHERE account_id=?1'
+    )
+      .bind(accountId)
+      .first<any>()
+    console.log('totalRow', totalRow)
+
+    const successRow = await env.DB.prepare(
+      "SELECT COUNT(*) as cnt FROM sent_logs WHERE account_id=?1 AND status='sent'"
+    )
+      .bind(accountId)
+      .first<any>()
+    console.log('successRow', successRow)
+
+    const failRow = await env.DB.prepare(
+      "SELECT COUNT(*) as cnt FROM sent_logs WHERE account_id=?1 AND status!='sent'"
+    )
+      .bind(accountId)
+      .first<any>()
+    console.log('failRow', failRow)
+
+    const revenueRow = await env.DB.prepare(
+      'SELECT SUM(revenue) as rev FROM trackable_links tl JOIN campaigns c ON c.id=tl.campaign_id WHERE c.account_id=?1'
+    )
+      .bind(accountId)
+      .first<any>()
+    console.log('revenueRow', revenueRow)
+
+    const categoryRows = await env.DB.prepare(
+      'SELECT category, COUNT(*) as count FROM customer_categories WHERE account_id=?1 GROUP BY category'
+    )
+      .bind(accountId)
+      .all<any>()
+    console.log('categoryRows', categoryRows)
+
+    const campaignRows = await env.DB.prepare(
+      'SELECT c.id, c.message_text, COALESCE(a.total_sent,0) as total_sent FROM campaigns c LEFT JOIN campaign_analytics a ON c.id=a.campaign_id WHERE c.account_id=?1'
+    )
+      .bind(accountId)
+      .all<any>()
+    console.log('campaignRows', campaignRows)
+
+    const revenueDayRows = await env.DB.prepare(
+      'SELECT strftime("%Y-%m-%d", tl.created_at) as day, SUM(tl.revenue) as rev FROM trackable_links tl JOIN campaigns c ON c.id=tl.campaign_id WHERE c.account_id=?1 GROUP BY day ORDER BY day'
+    )
+      .bind(accountId)
+      .all<any>()
+    console.log('revenueDayRows', revenueDayRows)
+
+    const metrics = {
+      messages_sent: totalRow?.cnt || 0,
+      successes: successRow?.cnt || 0,
+      failures: failRow?.cnt || 0,
+      revenue: revenueRow?.rev || 0,
+    }
+    console.log('metrics', metrics)
+
+    return new Response(
+      JSON.stringify({
+        metrics,
+        categories: categoryRows,
+        campaigns: campaignRows,
+        revenueByDay: revenueDayRows,
+      }),
+      { headers: { 'Content-Type': 'application/json' } }
+    )
+  } catch (err) {
+    console.error('/analytics/summary error', err)
+    return new Response(JSON.stringify({ error: 'analytics failed' }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' },
+    })
+  }
+})
+
+router.get('/campaigns/:id/analytics', async ({ params }, env: Env) => {
+  const row = await env.DB.prepare(
+    'SELECT * FROM campaign_analytics WHERE campaign_id=?1'
+  )
+    .bind(params?.id)
+    .first<any>()
+  return new Response(JSON.stringify({ analytics: row }), {
     headers: { 'Content-Type': 'application/json' },
   })
 })
@@ -148,7 +272,17 @@ export default {
     if (request.method === 'OPTIONS') {
       return new Response('', { status: 204, headers: corsHeaders })
     }
-    const resp = await router.handle(request, env, ctx)
+    console.log('incoming request', request.method, new URL(request.url).pathname)
+    let resp: Response
+    try {
+      resp = await router.handle(request, env, ctx)
+      if (!resp) {
+        resp = new Response('Not Found', { status: 404 })
+      }
+    } catch (err) {
+      console.error('router error', err)
+      resp = new Response('Internal Error', { status: 500 })
+    }
     resp.headers.set('Access-Control-Allow-Origin', '*')
     resp.headers.set('Access-Control-Allow-Headers', 'Content-Type')
     resp.headers.set('Access-Control-Allow-Methods', 'GET,POST,OPTIONS')
