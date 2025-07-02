@@ -144,7 +144,9 @@ router.post('/campaigns/:id/start', async ({ params }) => {
 router.get('/categories', async (request: Request, env: Env) => {
   const accountId = 1
   const { results } = await env.DB.prepare(
+
     'SELECT id, name, keywords_json, description, sample_chats_json FROM categories WHERE account_id=?1'
+
   )
     .bind(accountId)
     .all<any>()
@@ -155,17 +157,20 @@ router.get('/categories', async (request: Request, env: Env) => {
 
 // Create category
 router.post('/categories', async (request: Request, env: Env) => {
+
   const { name, keywords, description, examples } = await request.json()
   const accountId = 1
   const res = await env.DB.prepare(
     'INSERT INTO categories (account_id, name, keywords_json, description, sample_chats_json) VALUES (?1, ?2, ?3, ?4, ?5)'
   )
     .bind(accountId, name, JSON.stringify(keywords || []), description || '', JSON.stringify(examples || []))
+
     .run()
   return new Response(JSON.stringify({ id: res.lastRowId }), {
     headers: { 'Content-Type': 'application/json' },
   })
 })
+
 
 // Analytics summary
 router.get('/analytics/summary', async (request: Request, env: Env) => {
@@ -232,6 +237,7 @@ router.get('/campaigns/:id/analytics', async ({ params }, env: Env) => {
     headers: { 'Content-Type': 'application/json' },
   })
 })
+
 
 // Default route
 router.all('*', () => new Response('Not Found', { status: 404 }))
