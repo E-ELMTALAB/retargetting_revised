@@ -1,4 +1,8 @@
 #!/bin/bash
-# Simple script to run API tests
+# Simple script to run all API tests
 
-python3 tests/test_endpoints.py
+set -e
+for t in tests/test_*.py; do
+  echo "Running $t"
+  python3 "$t"
+done

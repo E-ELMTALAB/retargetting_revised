@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useEffect, useState } from 'react'
 import {
   Chart,
   CategoryScale,
@@ -24,51 +24,87 @@ Chart.register(
 )
 
 export default function AnalyticsDashboard() {
-  const revenueData = {
-    labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
-    datasets: [
-      {
-        label: 'Revenue',
-        data: [20, 40, 35, 50, 55, 60, 65],
-        borderColor: 'rgb(99, 102, 241)',
-        backgroundColor: 'rgba(99, 102, 241, 0.5)',
-      },
-    ],
-  }
+  const API_BASE =
+    import.meta.env.VITE_API_BASE ||
+    'https://retargetting-worker.elmtalabx.workers.dev/'
 
-  const metrics = [
-    { label: 'Messages Sent', value: 1960 },
-    { label: 'Successes', value: 1890 },
-    { label: 'Failures', value: 70 },
-    { label: 'CTR', value: '4.1%' },
-    { label: 'Revenue', value: '$4,200' },
-  ]
+  const [metrics, setMetrics] = useState([])
+  const [revenueData, setRevenueData] = useState({ labels: [], datasets: [] })
+  const [categoryData, setCategoryData] = useState({ labels: [], datasets: [] })
+  const [campaignData, setCampaignData] = useState({ labels: [], datasets: [] })
+  const [topLines, setTopLines] = useState([])
 
-  const categoryData = {
-    labels: ['Buyer', 'Browser', 'Refund Risk'],
-    datasets: [
-      {
-        label: 'Distribution',
-        data: [60, 30, 10],
-        backgroundColor: [
-          'rgb(34,197,94)',
-          'rgb(59,130,246)',
-          'rgb(239,68,68)',
-        ],
-      },
-    ],
-  }
-
-  const campaignData = {
-    labels: ['Spring', 'Summer', 'Fall'],
-    datasets: [
-      {
-        label: 'Messages Sent',
-        data: [500, 800, 650],
-        backgroundColor: 'rgba(16,185,129,0.6)',
-      },
-    ],
-  }
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const resp = await fetch(`${API_BASE}/analytics/summary`)
+        const data = await resp.json()
+        const m = data.metrics || {}
+        const ctr =
+          m.messages_sent && m.successes
+            ? ((m.successes / m.messages_sent) * 100).toFixed(1) + '%'
+            : '0%'
+        setMetrics([
+          { label: 'Messages Sent', value: m.messages_sent || 0 },
+          { label: 'Successes', value: m.successes || 0 },
+          { label: 'Failures', value: m.failures || 0 },
+          { label: 'CTR', value: ctr },
+          { label: 'Revenue', value: `$${m.revenue || 0}` },
+        ])
+        const revLabels = (data.revenueByDay || []).map((r) => r.day)
+        const revValues = (data.revenueByDay || []).map((r) => r.rev)
+        setRevenueData({
+          labels: revLabels,
+          datasets: [
+            {
+              label: 'Revenue',
+              data: revValues,
+              borderColor: 'rgb(99, 102, 241)',
+              backgroundColor: 'rgba(99, 102, 241, 0.5)',
+            },
+          ],
+        })
+        setCategoryData({
+          labels: (data.categories || []).map((c) => c.category),
+          datasets: [
+            {
+              label: 'Distribution',
+              data: (data.categories || []).map((c) => c.count),
+              backgroundColor: [
+                'rgb(34,197,94)',
+                'rgb(59,130,246)',
+                'rgb(239,68,68)',
+              ],
+            },
+          ],
+        })
+        setCampaignData({
+          labels: (data.campaigns || []).map((c) => `#${c.id}`),
+          datasets: [
+            {
+              label: 'Messages Sent',
+              data: (data.campaigns || []).map((c) => c.total_sent),
+              backgroundColor: 'rgba(16,185,129,0.6)',
+            },
+          ],
+        })
+        const lines = []
+        for (const c of data.campaigns || []) {
+          if (c.best_performing_lines) {
+            try {
+              lines.push(...JSON.parse(c.best_performing_lines))
+            } catch (_) {
+              /* ignore */
+            }
+          }
+        }
+        setTopLines(lines.slice(0, 3))
+      } catch (err) {
+        console.error('analytics fetch', err)
+      }
+    }
+    fetchData()
+  }, [])
 
   return (
 
@@ -103,9 +139,9 @@ export default function AnalyticsDashboard() {
         <div className="bg-white p-4 rounded shadow lg:col-span-2">
           <h3 className="mb-2 font-medium">Best Performing Lines</h3>
           <ul className="list-disc list-inside space-y-1 text-sm">
-            <li>"Limited time discount ends today"</li>
-            <li>"You left items in your cart"</li>
-            <li>"VIP early access just for you"</li>
+            {topLines.map((l, i) => (
+              <li key={i}>{l}</li>
+            ))}
           </ul>
         </div>
       </div>
@@ -113,9 +149,11 @@ export default function AnalyticsDashboard() {
       <div className="bg-white p-4 rounded shadow space-y-2">
         <h3 className="mb-2 font-medium">Post Campaign Scorecard</h3>
         <ul className="list-disc list-inside text-sm space-y-1">
-          <li>Response Rate: 32%</li>
-          <li>Top Line: "Limited time discount ends today"</li>
-          <li>Revenue Attribution: $4,200</li>
+          {metrics.length > 0 && (
+            <li>Response Rate: {metrics[3].value}</li>
+          )}
+          {topLines[0] && <li>Top Line: {topLines[0]}</li>}
+          {metrics.length > 0 && <li>Revenue Attribution: {metrics[4].value}</li>}
           <li>Suggested Follow-up: Send VIP exclusive</li>
         </ul>
       </div>
