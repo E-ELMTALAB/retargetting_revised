@@ -13,6 +13,93 @@ interface Env {
 
 const router = Router()
 
+const INIT_SCHEMA = `
+CREATE TABLE IF NOT EXISTS accounts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    email TEXT NOT NULL UNIQUE,
+    api_key TEXT NOT NULL,
+    plan_type TEXT
+);
+CREATE TABLE IF NOT EXISTS campaigns (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    account_id INTEGER NOT NULL,
+    message_text TEXT,
+    status TEXT,
+    filters_json TEXT,
+    quiet_hours_json TEXT,
+    nudge_settings_json TEXT,
+    FOREIGN KEY (account_id) REFERENCES accounts(id)
+);
+CREATE TABLE IF NOT EXISTS telegram_sessions (
+    account_id INTEGER PRIMARY KEY,
+    encrypted_session_data TEXT,
+    FOREIGN KEY (account_id) REFERENCES accounts(id)
+);
+CREATE TABLE IF NOT EXISTS sent_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    account_id INTEGER NOT NULL,
+    campaign_id INTEGER NOT NULL,
+    user_phone TEXT,
+    status TEXT,
+    error_details TEXT,
+    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (account_id) REFERENCES accounts(id),
+    FOREIGN KEY (campaign_id) REFERENCES campaigns(id)
+);
+CREATE TABLE IF NOT EXISTS customer_categories (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    account_id INTEGER NOT NULL,
+    user_phone TEXT,
+    category TEXT,
+    confidence_score REAL,
+    FOREIGN KEY (account_id) REFERENCES accounts(id)
+);
+CREATE TABLE IF NOT EXISTS categories (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    account_id INTEGER NOT NULL,
+    name TEXT,
+    keywords_json TEXT,
+    description TEXT,
+    sample_chats_json TEXT,
+    FOREIGN KEY (account_id) REFERENCES accounts(id)
+);
+CREATE TABLE IF NOT EXISTS trackable_links (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    campaign_id INTEGER NOT NULL,
+    original_url TEXT,
+    tracking_code TEXT,
+    clicks INTEGER DEFAULT 0,
+    revenue REAL DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (campaign_id) REFERENCES campaigns(id)
+);
+CREATE TABLE IF NOT EXISTS campaign_analytics (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    campaign_id INTEGER NOT NULL,
+    total_sent INTEGER,
+    total_clicks INTEGER,
+    total_revenue REAL,
+    best_performing_lines TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (campaign_id) REFERENCES campaigns(id)
+);
+CREATE TABLE IF NOT EXISTS pending_sessions (
+    account_id INTEGER PRIMARY KEY,
+    phone TEXT,
+    session TEXT,
+    phone_code_hash TEXT,
+    FOREIGN KEY (account_id) REFERENCES accounts(id)
+);
+`;
+
+async function ensureSchema(db: D1Database) {
+  try {
+    await db.exec(INIT_SCHEMA);
+  } catch (err) {
+    console.error('schema init error', err);
+  }
+}
+
 // Authentication - placeholder
 router.post('/auth/login', async (request: Request) => {
   // TODO: implement JWT issuance
@@ -281,6 +368,8 @@ export default {
     if (request.method === 'OPTIONS') {
       return new Response('', { status: 204, headers: corsHeaders })
     }
+
+    await ensureSchema(env.DB)
 
     console.log('incoming request', request.method, new URL(request.url).pathname)
 
