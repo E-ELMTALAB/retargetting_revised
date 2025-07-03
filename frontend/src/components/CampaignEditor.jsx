@@ -1,10 +1,14 @@
-import React, { useState, useRef } from 'react'
+import React, { useState, useRef, useEffect } from 'react'
 import ReactQuill from 'react-quill'
 import 'react-quill/dist/quill.snow.css'
 
+const API_BASE =
+  import.meta.env.VITE_API_BASE ||
+  'https://retargetting-worker.elmtalabx.workers.dev'
+
 const placeholders = ['{{first_name}}', '{{last_order}}', '{{discount_code}}']
 
-export default function CampaignEditor() {
+export default function CampaignEditor({ accountId, sessionId, onSelectCampaign }) {
   const [message, setMessage] = useState('')
   const [media, setMedia] = useState(null)
   const [categories, setCategories] = useState([])
@@ -12,7 +16,22 @@ export default function CampaignEditor() {
   const [quietEnd, setQuietEnd] = useState('')
   const [nudge, setNudge] = useState('')
   const [trackingUrl, setTrackingUrl] = useState('')
+  const [status, setStatus] = useState('')
+  const [errors, setErrors] = useState({})
+  const [drafts, setDrafts] = useState([])
   const quillRef = useRef(null)
+
+  const fetchDrafts = () => {
+    if (!accountId) return
+    fetch(`${API_BASE}/campaigns?account_id=${accountId}`)
+      .then(r => r.json())
+      .then(d => setDrafts(d.campaigns || []))
+      .catch(e => console.error('draft fetch error', e))
+  }
+
+  useEffect(() => {
+    fetchDrafts()
+  }, [accountId])
 
   const insertPlaceholder = ph => {
     const quill = quillRef.current.getEditor()
@@ -20,9 +39,36 @@ export default function CampaignEditor() {
     quill.insertText(range.index, ph)
   }
 
-  const handleSubmit = e => {
+  const handleSubmit = async e => {
     e.preventDefault()
-    alert('Campaign saved (mock)')
+    const errs = {}
+    if (!message || message.trim().length === 0) errs.message = 'Message required'
+    if (!sessionId) errs.session = 'Telegram session required'
+    if (trackingUrl && !/^https?:\/\//.test(trackingUrl)) errs.trackingUrl = 'Invalid URL'
+    setErrors(errs)
+    if (Object.keys(errs).length) return
+    setStatus('Starting...')
+    try {
+      const resp = await fetch(`${API_BASE}/campaigns`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          account_id: accountId,
+          telegram_session_id: sessionId,
+          message_text: message,
+        }),
+      })
+      const data = await resp.json().catch(() => ({}))
+      if (!resp.ok) throw new Error(JSON.stringify(data))
+      const campaignId = data.id
+      await fetch(`${API_BASE}/campaigns/${campaignId}/start`, { method: 'POST' })
+      setStatus('Campaign running')
+      fetchDrafts()
+      onSelectCampaign && onSelectCampaign(campaignId)
+    } catch (err) {
+      console.error('campaign start error', err)
+      setStatus('Failed to start')
+    }
   }
 
   return (
@@ -33,7 +79,7 @@ export default function CampaignEditor() {
         className="space-y-6 bg-white p-8 rounded-lg shadow-md border border-gray-200"
       >
         <div className="space-y-2">
-          <label className="block font-semibold">Message</label>
+          <label className="block font-semibold">Message (required)</label>
           <ReactQuill
             ref={quillRef}
             value={message}
@@ -52,10 +98,13 @@ export default function CampaignEditor() {
               </button>
             ))}
           </div>
+          {errors.message && (
+            <p className="text-red-600 text-sm">{errors.message}</p>
+          )}
         </div>
 
         <div className="space-y-1">
-          <label className="block font-semibold">Media</label>
+          <label className="block font-semibold">Media (optional)</label>
           <input
             type="file"
             className="block border rounded p-2 w-full focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -64,7 +113,7 @@ export default function CampaignEditor() {
         </div>
 
         <div className="space-y-1">
-          <label className="block font-semibold">Category Filters</label>
+          <label className="block font-semibold">Category Filters (optional)</label>
           <select
             multiple
             className="border rounded p-2 w-full focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -81,7 +130,7 @@ export default function CampaignEditor() {
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="flex flex-col space-y-1">
-            <label className="font-semibold">Quiet Start</label>
+            <label className="font-semibold">Quiet Start (optional)</label>
             <input
               type="time"
               className="border rounded p-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -90,7 +139,7 @@ export default function CampaignEditor() {
             />
           </div>
           <div className="flex flex-col space-y-1">
-            <label className="font-semibold">Quiet End</label>
+            <label className="font-semibold">Quiet End (optional)</label>
             <input
               type="time"
               className="border rounded p-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -101,7 +150,7 @@ export default function CampaignEditor() {
         </div>
 
         <div className="space-y-1">
-          <label className="block font-semibold">Nudge Message</label>
+          <label className="block font-semibold">Nudge Message (optional)</label>
           <input
             type="text"
             className="border rounded p-2 w-full focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -111,13 +160,16 @@ export default function CampaignEditor() {
         </div>
 
         <div className="space-y-1">
-          <label className="block font-semibold">Link Tracking URL</label>
+          <label className="block font-semibold">Link Tracking URL (optional)</label>
           <input
             type="url"
             className="border rounded p-2 w-full focus:outline-none focus:ring-2 focus:ring-blue-500"
             value={trackingUrl}
             onChange={e => setTrackingUrl(e.target.value)}
           />
+          {errors.trackingUrl && (
+            <p className="text-red-600 text-sm">{errors.trackingUrl}</p>
+          )}
         </div>
 
         <button
@@ -126,7 +178,40 @@ export default function CampaignEditor() {
         >
           Start Campaign
         </button>
+        {errors.session && (
+          <p className="text-red-600 text-sm">{errors.session}</p>
+        )}
+        {status && <p className="text-sm">{status}</p>}
       </form>
+
+      {drafts.length > 0 && (
+        <div className="mt-8 space-y-2">
+          <h3 className="text-xl font-semibold">Draft Campaigns</h3>
+          <ul className="space-y-1">
+            {drafts.map(c => (
+              <li key={c.id} className="flex items-center justify-between border p-2 rounded">
+                <span>{c.message_text.slice(0, 30)}...</span>
+                <button
+                  className="text-sm underline"
+                  onClick={() => {
+                    fetch(`${API_BASE}/campaigns/${c.id}/start`, { method: 'POST' })
+                      .then(() => {
+                        setStatus('Campaign running')
+                        onSelectCampaign && onSelectCampaign(c.id)
+                      })
+                      .catch(err => {
+                        console.error('rerun error', err)
+                        setStatus('Failed to start')
+                      })
+                  }}
+                >
+                  Run
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   )
 }

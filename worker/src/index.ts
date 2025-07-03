@@ -346,6 +346,19 @@ router.post('/campaigns', async (request: Request, env: Env) => {
   return jsonResponse({ id: res.lastRowId })
 })
 
+// List campaigns for an account
+router.get('/campaigns', async (request: Request, env: Env) => {
+  const url = new URL(request.url)
+  const accountId = Number(url.searchParams.get('account_id') || 0)
+  if (!accountId) return jsonResponse({ error: 'account_id required' }, 400)
+
+  const { results } = await env.DB.prepare(
+    'SELECT id, message_text, status FROM campaigns WHERE account_id=?1 ORDER BY id DESC'
+  ).bind(accountId).all()
+  const rows = Array.isArray(results) ? results : results.results || []
+  return jsonResponse({ campaigns: rows })
+})
+
 // Start campaign - schedule job
 router.post('/campaigns/:id/start', async ({ params }, env: Env) => {
   const id = Number(params?.id || 0)
@@ -535,6 +548,22 @@ router.get('/campaigns/:id/analytics', async ({ params }, env: Env) => {
   return new Response(JSON.stringify({ analytics: row }), {
     headers: { 'Content-Type': 'application/json' },
   })
+})
+
+// Fetch logs for a campaign from the Python API
+router.get('/campaigns/:id/logs', async ({ params }, env: Env) => {
+  const id = Number(params?.id || 0)
+  if (!id) return jsonResponse({ error: 'invalid id' }, 400)
+  let resp: Response
+  try {
+    resp = await fetch(`${env.PYTHON_API_URL}/campaign_logs/${id}`)
+  } catch (err) {
+    console.error('fetch campaign logs error', err)
+    return jsonResponse({ error: 'api request failed' }, 500)
+  }
+  const data = await resp.json().catch(() => ({}))
+  if (!resp.ok) return jsonResponse({ error: 'python error', details: data }, resp.status)
+  return jsonResponse(data)
 })
 
 

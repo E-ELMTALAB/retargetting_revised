@@ -1,22 +1,34 @@
 import React, { useState, useEffect } from 'react'
 
-export default function CampaignMonitor({ sessionId }) {
+const API_BASE =
+  import.meta.env.VITE_API_BASE ||
+  'https://retargetting-worker.elmtalabx.workers.dev'
+
+export default function CampaignMonitor({ campaignId }) {
   const [progress, setProgress] = useState(0)
   const [errors, setErrors] = useState([])
   const [logs, setLogs] = useState([])
 
-  // mock progress simulation
   useEffect(() => {
-    console.log('CampaignMonitor mount session', sessionId)
-    const id = setInterval(() => {
-      setProgress(p => {
-        const next = p < 100 ? p + 5 : 100
-        setLogs(l => [...l, `Sent message ${next}`])
-        return next
-      })
-    }, 500)
+    if (!campaignId) return
+    const fetchLogs = () => {
+      fetch(`${API_BASE}/campaigns/${campaignId}/logs`)
+        .then(r => r.json())
+        .then(d => {
+          const arr = d.logs || []
+          setLogs(arr)
+          const sent = arr.filter(l => l.status === 'sent').length
+          const total = arr.length
+          if (total > 0) setProgress(Math.round((sent / total) * 100))
+          const errs = arr.filter(l => l.status !== 'sent').map(l => `${l.phone}: ${l.error || 'failed'}`)
+          setErrors(errs)
+        })
+        .catch(e => console.error('log fetch error', e))
+    }
+    fetchLogs()
+    const id = setInterval(fetchLogs, 2000)
     return () => clearInterval(id)
-  }, [])
+  }, [campaignId])
 
   return (
 
@@ -73,7 +85,10 @@ export default function CampaignMonitor({ sessionId }) {
         ) : (
           <ul className="text-sm list-disc list-inside space-y-1">
             {logs.map((l, i) => (
-              <li key={i}>{l}</li>
+              <li key={i}>
+                {l.phone}: {l.status}
+                {l.error && ` - ${l.error}`}
+              </li>
             ))}
           </ul>
         )}
