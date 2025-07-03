@@ -25,11 +25,28 @@ export default function Login({ onLogin }) {
       if (!resp.ok) throw new Error(JSON.stringify(data))
       const id = data.id
       localStorage.setItem('accountId', id)
+
+
+      let firstSessionId = null
+      try {
+        const sessResp = await fetch(`${API_BASE}/session/status?account_id=${id}`)
+        const sessData = await sessResp.json().catch(() => ({}))
+        console.log('session status resp', sessResp.status, sessData)
+        if (sessResp.ok && sessData.sessions && sessData.sessions.length > 0) {
+          firstSessionId = sessData.sessions[0].id
+          localStorage.setItem('sessionId', firstSessionId)
+        }
+      } catch (sessErr) {
+        console.error('session status error', sessErr)
+      }
+
       setStatus('Success')
-      onLogin(id)
+      onLogin(id, firstSessionId)
     } catch (err) {
       console.error('auth error', err)
-      setStatus('Failed')
+      const msg = err && err.message ? err.message : 'Failed'
+      setStatus('Failed: ' + msg)
+
     }
   }
 

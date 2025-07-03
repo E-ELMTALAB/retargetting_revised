@@ -116,26 +116,6 @@ async function hashPassword(pw: string): Promise<string> {
     .join('');
 }
 
-// Add a function to check the accounts table and columns at startup
-async function checkAccountsTable(db: D1Database) {
-  try {
-    const row = await db.prepare("PRAGMA table_info(accounts)").first();
-    if (!row) {
-      console.error('[SCHEMA ERROR] accounts table does not exist!');
-    } else {
-      const columns = await db.prepare("PRAGMA table_info(accounts)").all();
-      const colNames = (Array.isArray(columns) ? columns : columns.results || []).map((c: any) => c.name);
-      const required = ['id', 'email', 'password_hash', 'plan_type'];
-      for (const r of required) {
-        if (!colNames.includes(r)) {
-          console.error(`[SCHEMA ERROR] accounts table missing column: ${r}`);
-        }
-      }
-    }
-  } catch (err) {
-    console.error('[SCHEMA CHECK ERROR]', err);
-  }
-}
 
 // Sign up new account
 router.post('/auth/signup', async (request: Request, env: Env) => {
@@ -151,9 +131,14 @@ router.post('/auth/signup', async (request: Request, env: Env) => {
     ).bind(email, hash, 'basic').run()
     console.log('created account id', res.lastRowId)
     return new Response(JSON.stringify({ id: res.lastRowId }), { headers: { 'Content-Type': 'application/json' } })
-  } catch (err) {
+
+  } catch (err: any) {
     console.error('/auth/signup error', err)
-    return new Response(JSON.stringify({ error: 'account exists', details: err && ((err as any).stack || (err as any).message || err.toString()) }), { status: 400 })
+    if ((err.message || '').includes('UNIQUE')) {
+      return new Response(JSON.stringify({ error: 'account exists' }), { status: 409 })
+    }
+    return new Response(JSON.stringify({ error: 'db error' }), { status: 500 })
+
   }
 })
 
@@ -171,16 +156,19 @@ router.post('/auth/login', async (request: Request, env: Env) => {
       .bind(email)
       .first()
   } catch (err) {
-    console.error('/auth/login db error', err)
-    return new Response(JSON.stringify({ error: 'db error', details: err && ((err as any).stack || (err as any).message || err.toString()) }), { status: 500 })
+
+    console.error('/auth/login query error', err)
+    return new Response(JSON.stringify({ error: 'db error' }), { status: 500 })
+
   }
   if (row && row.password_hash === hash) {
     console.log('login success for account', row.id)
     return new Response(JSON.stringify({ id: row.id }), { headers: { 'Content-Type': 'application/json' } })
-  } else {
-    console.log('login failed for', email)
-    return new Response(JSON.stringify({ error: 'invalid credentials' }), { status: 401 })
+
   }
+  console.log('login failed for', email)
+  return new Response(JSON.stringify({ error: 'invalid credentials' }), { status: 401 })
+
 })
 
 // Begin Telegram session - send code

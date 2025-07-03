@@ -91,17 +91,22 @@ export default function ConnectTelegram({ accountId, sessionId, onSelectSession 
   }
 
   return (
-    <div className="p-4 max-w-md mx-auto space-y-4">
-      <h2 className="text-2xl font-semibold text-center">Connect Telegram</h2>
+
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+      <div className="max-w-md w-full bg-white p-6 rounded-lg shadow-md space-y-4">
+        <h2 className="text-2xl font-semibold text-center">Connect Telegram</h2>
+
       {step === 'list' && (
         <div className="space-y-2">
           <p className="text-sm">Select a session:</p>
           <ul className="space-y-1">
             {sessions.map(s => (
-              <li key={s.id} className="flex items-center justify-between border p-2 rounded">
-                <span>{s.phone || 'Session ' + s.id}</span>
+
+              <li key={s.id} className="flex items-center justify-between border p-2 rounded bg-gray-50">
+                <span className="font-medium">{s.phone || 'Session ' + s.id}</span>
                 <button
-                  className="text-sm underline"
+                  className="text-sm underline hover:text-blue-600"
+
                   onClick={() => {
                     console.log('select session', s.id)
                     onSelectSession && onSelectSession(s.id)
@@ -112,7 +117,9 @@ export default function ConnectTelegram({ accountId, sessionId, onSelectSession 
               </li>
             ))}
           </ul>
-          <button className="text-sm underline" onClick={() => setStep('phone')}>Add New Session</button>
+
+          <button className="text-sm underline hover:text-blue-600" onClick={() => setStep('phone')}>Add New Session</button>
+
         </div>
       )}
       {step === 'phone' && (
@@ -120,13 +127,13 @@ export default function ConnectTelegram({ accountId, sessionId, onSelectSession 
           <input
             type="tel"
             placeholder="Phone number"
-            className="border p-2 w-full"
+            className="border p-2 w-full rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
             value={phone}
             onChange={e => setPhone(e.target.value)}
           />
           <button
             type="submit"
-            className="w-full bg-blue-600 text-white py-2 rounded"
+            className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 rounded"
           >
             Send Code
           </button>
@@ -137,13 +144,13 @@ export default function ConnectTelegram({ accountId, sessionId, onSelectSession 
           <input
             type="text"
             placeholder="Telegram code"
-            className="border p-2 w-full"
+            className="border p-2 w-full rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
             value={code}
             onChange={e => setCode(e.target.value)}
           />
           <button
             type="submit"
-            className="w-full bg-green-600 text-white py-2 rounded"
+            className="w-full bg-green-600 hover:bg-green-700 text-white py-2 rounded"
           >
             Verify
           </button>
@@ -153,6 +160,7 @@ export default function ConnectTelegram({ accountId, sessionId, onSelectSession 
         <p className="text-center">Telegram already connected.</p>
       )}
       {status && <p className="text-center text-sm text-gray-600">{status}</p>}
+      </div>
     </div>
   )
 }
