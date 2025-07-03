@@ -312,11 +312,12 @@ router.get('/analytics/summary', async (request: Request, env: Env) => {
     const categoryRows = Array.isArray(categoryRowsResult) ? categoryRowsResult : categoryRowsResult.results || []
     console.log('categoryRows', categoryRows)
 
-    const campaignRows = await env.DB.prepare(
+    const campaignRowsResult = await env.DB.prepare(
       'SELECT c.id, c.message_text, COALESCE(a.total_sent,0) as total_sent FROM campaigns c LEFT JOIN campaign_analytics a ON c.id=a.campaign_id WHERE c.account_id=?1'
     )
       .bind(accountId)
       .all()
+    const campaignRows = Array.isArray(campaignRowsResult) ? campaignRowsResult : campaignRowsResult.results || []
     console.log('campaignRows', campaignRows)
 
     let revenueDayRows = []

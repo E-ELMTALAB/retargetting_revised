@@ -90,8 +90,9 @@ export default function AnalyticsDashboard() {
             },
           ],
         })
-        const campLabels = (data.campaigns || []).map((c) => `#${c.id}`)
-        const campData = (data.campaigns || []).map((c) => c.total_sent)
+        const safeCampaigns = Array.isArray(data.campaigns) ? data.campaigns : []
+        const campLabels = safeCampaigns.map((c) => `#${c.id}`)
+        const campData = safeCampaigns.map((c) => c.total_sent)
         console.log('campLabels:', campLabels, 'campData:', campData)
         setCampaignData({
           labels: campLabels,
@@ -104,7 +105,7 @@ export default function AnalyticsDashboard() {
           ],
         })
         const lines = []
-        for (const c of data.campaigns || []) {
+        for (const c of safeCampaigns) {
           if (c.best_performing_lines) {
             try {
               const parsed = JSON.parse(c.best_performing_lines)
