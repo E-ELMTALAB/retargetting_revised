@@ -33,6 +33,11 @@ API_HASH = "911f278e674b5aaa7a4ecf14a49ea4d7"
 print('Starting Python API with API_ID', API_ID)
 
 
+def get_telegram_client(session_str: str):
+    """Return a connected Telethon client from a StringSession."""
+    return TelegramClient(StringSession(session_str), API_ID, API_HASH)
+
+
 @app.route('/health', methods=['GET'])
 def health():
     """Simple health check endpoint."""
@@ -40,24 +45,46 @@ def health():
 
 @app.route('/execute_campaign', methods=['POST'])
 def execute_campaign():
-    """Receive a campaign job from the Cloudflare Worker.
+    """Execute a campaign job sent from the Cloudflare Worker.
 
-    Expects JSON payload with account_id and campaign_id. All Telegram
-    operations will be implemented here using Telethon.
+    Expected JSON payload:
+    {
+        "session": "<telegram string session>",
+        "message": "<text message>",
+        "recipients": ["+10000000001", "+10000000002"],
+        "account_id": 1,
+        "campaign_id": 10
+    }
     """
     payload = request.get_json(force=True)
-    account_id = payload.get('account_id')
-    campaign_id = payload.get('campaign_id')
+    session_str = payload.get('session')
+    message = payload.get('message')
+    recipients = payload.get('recipients', [])
 
-    # TODO: Implement message sending logic, retries and error handling
-    # based on retargetting_old.py. This endpoint should remain stateless
-    # and expect all required data from the worker.
+    if not session_str or not message or not recipients:
+        return jsonify({'error': 'missing parameters'}), 400
 
-    return jsonify({
-        'status': 'accepted',
-        'account_id': account_id,
-        'campaign_id': campaign_id
-    })
+    async def _send():
+        client = get_telegram_client(session_str)
+        await client.connect()
+        results = []
+        for phone in recipients:
+            try:
+                await client.send_message(phone, message)
+                results.append({'phone': phone, 'status': 'sent'})
+                await asyncio.sleep(1)
+            except Exception as e:
+                results.append({'phone': phone, 'status': 'failed', 'error': str(e)})
+        await client.disconnect()
+        return results
+
+    try:
+        results = asyncio.run(_send())
+    except Exception as e:
+        print('[ERROR] execute_campaign', e)
+        return jsonify({'error': str(e)}), 500
+
+    return jsonify({'status': 'completed', 'results': results})
 
 
 @app.route('/session/connect', methods=['POST'])
