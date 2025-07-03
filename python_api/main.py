@@ -17,11 +17,8 @@ def get_telegram_client(session_str=None):
     if session_str:
         print("[DEBUG] Using provided session string.")
         return TelegramClient(StringSession(session_str), TELEGRAM_API_ID, TELEGRAM_API_HASH)
-    elif os.path.exists(SESSION_FILE):
-        print(f"[DEBUG] Using session file: {SESSION_FILE}")
-        return TelegramClient(SESSION_FILE, TELEGRAM_API_ID, TELEGRAM_API_HASH)
     else:
-        print("[DEBUG] Creating new session.")
+        print("[DEBUG] Creating new StringSession.")
         return TelegramClient(StringSession(), TELEGRAM_API_ID, TELEGRAM_API_HASH)
 
 @app.route('/health', methods=['GET'])
@@ -68,13 +65,19 @@ def session_connect():
                 session_str = client.session.save()
                 await client.disconnect()
                 print(f"[DEBUG] Disconnected after sending code.")
-                return session_str, result.phone_code_hash
+                return session_str, result.phone_code_hash, None
             except Exception as e:
                 print(f"[ERROR] _send_code: {e}")
-                return None, None
-        session_str, phone_code_hash = asyncio.run(_send_code())
+                return None, None, str(e)
+        session_str, phone_code_hash, err = None, None, None
+        try:
+            session_str, phone_code_hash, err = asyncio.run(_send_code())
+        except Exception as e:
+            print(f"[ERROR] asyncio.run(_send_code): {e}")
+            err = str(e)
         if not session_str or not phone_code_hash:
-            return jsonify({'error': 'Failed to send code'}), 500
+            print(f"[ERROR] Failed to send code: {err}")
+            return jsonify({'error': 'Failed to send code', 'details': err}), 500
         return jsonify({'session': session_str, 'phone_code_hash': phone_code_hash})
     except Exception as e:
         print(f"[ERROR] /session/connect: {e}")
@@ -105,18 +108,24 @@ def session_verify():
                 except SessionPasswordNeededError:
                     print("[ERROR] Session password needed")
                     await client.disconnect()
-                    return None, 'PASSWORD_NEEDED'
+                    return None, 'PASSWORD_NEEDED', None
                 session_final = client.session.save()
                 await client.disconnect()
                 print("[DEBUG] Disconnected after sign in")
-                return session_final, None
+                return session_final, None, None
             except Exception as e:
                 print(f"[ERROR] _sign_in: {e}")
-                return None, str(e)
-        session_final, err = asyncio.run(_sign_in())
+                return None, str(e), str(e)
+        session_final, err, details = None, None, None
+        try:
+            session_final, err, details = asyncio.run(_sign_in())
+        except Exception as e:
+            print(f"[ERROR] asyncio.run(_sign_in): {e}")
+            err = str(e)
+            details = str(e)
         if err:
             print(f"[ERROR] /session/verify: {err}")
-            return jsonify({'error': err}), 400
+            return jsonify({'error': err, 'details': details}), 400
         print(f"[DEBUG] Session verified: {session_final[:10] if session_final else None}")
         return jsonify({'session': session_final})
     except Exception as e:
