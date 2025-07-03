@@ -35,15 +35,20 @@ export default function AnalyticsDashboard() {
   const [topLines, setTopLines] = useState([])
 
   useEffect(() => {
+    console.log('AnalyticsDashboard mounted')
     const fetchData = async () => {
       try {
+        console.log('Fetching analytics summary...')
         const resp = await fetch(`${API_BASE}/analytics/summary`)
+        console.log('Fetch response:', resp)
         const data = await resp.json()
+        console.log('Fetched data:', data)
         const m = data.metrics || {}
         const ctr =
           m.messages_sent && m.successes
             ? ((m.successes / m.messages_sent) * 100).toFixed(1) + '%'
             : '0%'
+        console.log('Metrics:', m, 'CTR:', ctr)
         setMetrics([
           { label: 'Messages Sent', value: m.messages_sent || 0 },
           { label: 'Successes', value: m.successes || 0 },
@@ -52,8 +57,10 @@ export default function AnalyticsDashboard() {
           { label: 'Revenue', value: `$${m.revenue || 0}` },
         ])
         const safeRevenueByDay = Array.isArray(data.revenueByDay) ? data.revenueByDay : []
+        console.log('safeRevenueByDay:', safeRevenueByDay)
         const revLabels = safeRevenueByDay.map((r) => r.day)
         const revValues = safeRevenueByDay.map((r) => r.rev)
+        console.log('revLabels:', revLabels, 'revValues:', revValues)
         setRevenueData({
           labels: revLabels,
           datasets: [
@@ -65,12 +72,15 @@ export default function AnalyticsDashboard() {
             },
           ],
         })
+        const catLabels = (data.categories || []).map((c) => c.category)
+        const catData = (data.categories || []).map((c) => c.count)
+        console.log('catLabels:', catLabels, 'catData:', catData)
         setCategoryData({
-          labels: (data.categories || []).map((c) => c.category),
+          labels: catLabels,
           datasets: [
             {
               label: 'Distribution',
-              data: (data.categories || []).map((c) => c.count),
+              data: catData,
               backgroundColor: [
                 'rgb(34,197,94)',
                 'rgb(59,130,246)',
@@ -79,12 +89,15 @@ export default function AnalyticsDashboard() {
             },
           ],
         })
+        const campLabels = (data.campaigns || []).map((c) => `#${c.id}`)
+        const campData = (data.campaigns || []).map((c) => c.total_sent)
+        console.log('campLabels:', campLabels, 'campData:', campData)
         setCampaignData({
-          labels: (data.campaigns || []).map((c) => `#${c.id}`),
+          labels: campLabels,
           datasets: [
             {
               label: 'Messages Sent',
-              data: (data.campaigns || []).map((c) => c.total_sent),
+              data: campData,
               backgroundColor: 'rgba(16,185,129,0.6)',
             },
           ],
@@ -93,12 +106,15 @@ export default function AnalyticsDashboard() {
         for (const c of data.campaigns || []) {
           if (c.best_performing_lines) {
             try {
-              lines.push(...JSON.parse(c.best_performing_lines))
-            } catch (_) {
-              /* ignore */
+              const parsed = JSON.parse(c.best_performing_lines)
+              console.log('Parsed best_performing_lines for campaign', c.id, ':', parsed)
+              lines.push(...parsed)
+            } catch (e) {
+              console.log('Failed to parse best_performing_lines for campaign', c.id, ':', c.best_performing_lines)
             }
           }
         }
+        console.log('Top lines:', lines)
         setTopLines(lines.slice(0, 3))
       } catch (err) {
         console.error('analytics fetch', err)
@@ -106,6 +122,22 @@ export default function AnalyticsDashboard() {
     }
     fetchData()
   }, [])
+
+  useEffect(() => {
+    console.log('metrics state updated:', metrics)
+  }, [metrics])
+  useEffect(() => {
+    console.log('revenueData state updated:', revenueData)
+  }, [revenueData])
+  useEffect(() => {
+    console.log('categoryData state updated:', categoryData)
+  }, [categoryData])
+  useEffect(() => {
+    console.log('campaignData state updated:', campaignData)
+  }, [campaignData])
+  useEffect(() => {
+    console.log('topLines state updated:', topLines)
+  }, [topLines])
 
   return (
 
@@ -117,6 +149,7 @@ export default function AnalyticsDashboard() {
           <div
             key={m.label}
             className="bg-white p-4 rounded shadow text-center space-y-1"
+            onClick={() => console.log('Metric clicked:', m)}
           >
             <div className="text-sm text-gray-500">{m.label}</div>
             <div className="text-xl font-semibold">{m.value}</div>
@@ -141,7 +174,7 @@ export default function AnalyticsDashboard() {
           <h3 className="mb-2 font-medium">Best Performing Lines</h3>
           <ul className="list-disc list-inside space-y-1 text-sm">
             {topLines.map((l, i) => (
-              <li key={i}>{l}</li>
+              <li key={i} onClick={() => console.log('Top line clicked:', l)}>{l}</li>
             ))}
           </ul>
         </div>
