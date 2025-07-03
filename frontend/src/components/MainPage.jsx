@@ -6,6 +6,8 @@ import CampaignMonitor from './CampaignMonitor'
 import ConnectTelegram from './ConnectTelegram'
 import CategoryManager from './CategoryManager'
 
+/* hi */
+
 export default function MainPage({ onLogout, accountId, sessionId, onSelectSession }) {
   const [campaignId, setCampaignId] = React.useState(null)
   return (
