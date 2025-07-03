@@ -6,6 +6,7 @@ export default function App() {
   const [accountId, setAccountId] = useState(() => localStorage.getItem('accountId'))
   const [sessionId, setSessionId] = useState(() => localStorage.getItem('sessionId'))
 
+
   const handleLogin = (id, sessId) => {
     console.log('App login', id, sessId)
     setAccountId(id)
@@ -14,6 +15,7 @@ export default function App() {
       setSessionId(sessId)
       localStorage.setItem('sessionId', sessId)
     }
+
   }
 
   const handleLogout = () => {

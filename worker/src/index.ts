@@ -116,6 +116,7 @@ async function hashPassword(pw: string): Promise<string> {
     .join('');
 }
 
+
 // Sign up new account
 router.post('/auth/signup', async (request: Request, env: Env) => {
   const { email, password } = await request.json() as any
@@ -130,12 +131,14 @@ router.post('/auth/signup', async (request: Request, env: Env) => {
     ).bind(email, hash, 'basic').run()
     console.log('created account id', res.lastRowId)
     return new Response(JSON.stringify({ id: res.lastRowId }), { headers: { 'Content-Type': 'application/json' } })
+
   } catch (err: any) {
     console.error('/auth/signup error', err)
     if ((err.message || '').includes('UNIQUE')) {
       return new Response(JSON.stringify({ error: 'account exists' }), { status: 409 })
     }
     return new Response(JSON.stringify({ error: 'db error' }), { status: 500 })
+
   }
 })
 
@@ -153,15 +156,19 @@ router.post('/auth/login', async (request: Request, env: Env) => {
       .bind(email)
       .first()
   } catch (err) {
+
     console.error('/auth/login query error', err)
     return new Response(JSON.stringify({ error: 'db error' }), { status: 500 })
+
   }
   if (row && row.password_hash === hash) {
     console.log('login success for account', row.id)
     return new Response(JSON.stringify({ id: row.id }), { headers: { 'Content-Type': 'application/json' } })
+
   }
   console.log('login failed for', email)
   return new Response(JSON.stringify({ error: 'invalid credentials' }), { status: 401 })
+
 })
 
 // Begin Telegram session - send code
@@ -470,6 +477,7 @@ export default {
     }
 
     await ensureSchema(env.DB)
+    await checkAccountsTable(env.DB)
 
     console.log('incoming request', request.method, new URL(request.url).pathname)
 

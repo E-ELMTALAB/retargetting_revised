@@ -26,6 +26,7 @@ export default function Login({ onLogin }) {
       const id = data.id
       localStorage.setItem('accountId', id)
 
+
       let firstSessionId = null
       try {
         const sessResp = await fetch(`${API_BASE}/session/status?account_id=${id}`)
@@ -45,6 +46,7 @@ export default function Login({ onLogin }) {
       console.error('auth error', err)
       const msg = err && err.message ? err.message : 'Failed'
       setStatus('Failed: ' + msg)
+
     }
   }
 
