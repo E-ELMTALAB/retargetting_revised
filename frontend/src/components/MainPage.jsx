@@ -1,6 +1,6 @@
 import React from 'react'
 import { NavLink, Routes, Route, Navigate } from 'react-router-dom'
-import CampaignEditor from './CampaignEditor'
+import Campaigns from './Campaigns'
 import AnalyticsDashboard from './AnalyticsDashboard'
 import CampaignMonitor from './CampaignMonitor'
 import ConnectTelegram from './ConnectTelegram'
@@ -16,14 +16,14 @@ export default function MainPage({ onLogout, accountId, sessionId, onSelectSessi
         <ul className="space-y-1">
           <li>
             <NavLink
-              to="/editor"
+              to="/campaigns"
               className={({ isActive }) =>
                 `block px-3 py-2 rounded-md text-sm font-medium transition-colors ${
                   isActive ? 'bg-blue-600 text-white' : 'text-gray-700 hover:bg-blue-50'
                 }`
               }
             >
-              Campaign Editor
+              Campaigns
             </NavLink>
           </li>
           <li>
