@@ -6,19 +6,23 @@ import asyncio
 import os
 
 app = Flask(__name__)
-API_ID = 123456  # <-- Replace with your API ID
-API_HASH = '0123456789abcdef0123456789abcdef'  # <-- Replace with your API Hash
+TELEGRAM_API_ID = 27418503
+TELEGRAM_API_HASH = "911f278e674b5aaa7a4ecf14a49ea4d7"
 SESSION_FILE = os.path.join(os.path.dirname(__file__), "me.session")
 
-print(f"API_ID: {API_ID}, API_HASH: {API_HASH}")
+print(f"TELEGRAM_API_ID: {TELEGRAM_API_ID}, TELEGRAM_API_HASH: {TELEGRAM_API_HASH}")
 print(f"Session file exists: {os.path.exists(SESSION_FILE)} at {SESSION_FILE}")
 
 def get_telegram_client(session_str=None):
-    # Always use the session file as in retargetting_old.py
-    API_ID = 123456  # <-- Replace with your API ID
-    API_HASH = '0123456789abcdef0123456789abcdef'  # <-- Replace with your API Hash
-    print(f"[DEBUG] Using session file: {SESSION_FILE}")
-    return TelegramClient("me.session", API_ID, API_HASH)
+    if session_str:
+        print("[DEBUG] Using provided session string.")
+        return TelegramClient(StringSession(session_str), TELEGRAM_API_ID, TELEGRAM_API_HASH)
+    elif os.path.exists(SESSION_FILE):
+        print(f"[DEBUG] Using session file: {SESSION_FILE}")
+        return TelegramClient(SESSION_FILE, TELEGRAM_API_ID, TELEGRAM_API_HASH)
+    else:
+        print("[DEBUG] Creating new session.")
+        return TelegramClient(StringSession(), TELEGRAM_API_ID, TELEGRAM_API_HASH)
 
 @app.route('/health', methods=['GET'])
 def health():
