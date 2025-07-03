@@ -37,5 +37,6 @@ export default function App() {
     else localStorage.removeItem('sessionId')
   }
 
+
   return <MainPage accountId={accountId} sessionId={sessionId} onSelectSession={handleSelectSession} onLogout={handleLogout} />
 }

@@ -103,6 +103,16 @@ CREATE TABLE IF NOT EXISTS pending_sessions (
 async function ensureSchema(db: D1Database) {
   try {
     await db.exec(INIT_SCHEMA);
+    const acctColsRes: any = await db.prepare('PRAGMA table_info(accounts)').all();
+    const acctCols = Array.isArray(acctColsRes) ? acctColsRes : acctColsRes.results || [];
+    const names = acctCols.map((c: any) => c.name);
+    if (!names.includes('password_hash')) {
+      console.log('adding password_hash column');
+      try { await db.exec('ALTER TABLE accounts ADD COLUMN password_hash TEXT'); } catch (e) { console.log('alter accounts error', e); }
+    }
+    if (!names.includes('api_key')) {
+      // some older schema may lack api_key, that's fine
+    }
   } catch (err) {
     console.error('schema init error', err);
   }
@@ -126,9 +136,29 @@ router.post('/auth/signup', async (request: Request, env: Env) => {
   }
   const hash = await hashPassword(password)
   try {
-    const res = await env.DB.prepare(
-      'INSERT INTO accounts (email, password_hash, plan_type) VALUES (?1, ?2, ?3)'
-    ).bind(email, hash, 'basic').run()
+
+    const colRes: any = await env.DB.prepare('PRAGMA table_info(accounts)').all()
+    const cols = Array.isArray(colRes) ? colRes : colRes.results || []
+    const names = cols.map((c: any) => c.name)
+    const fields = ['email', 'plan_type']
+    const placeholders = ['?1', '?2']
+    const values: any[] = [email, 'basic']
+    let idx = 3
+    if (names.includes('password_hash')) {
+      fields.push('password_hash')
+      placeholders.push('?' + idx)
+      values.push(hash)
+      idx++
+    }
+    if (names.includes('api_key')) {
+      fields.push('api_key')
+      placeholders.push('?' + idx)
+      values.push(hash)
+      idx++
+    }
+    const sql = `INSERT INTO accounts (${fields.join(', ')}) VALUES (${placeholders.join(', ')})`
+    console.log('signup query', sql)
+    const res = await env.DB.prepare(sql).bind(...values).run()
     console.log('created account id', res.lastRowId)
     return new Response(JSON.stringify({ id: res.lastRowId }), { headers: { 'Content-Type': 'application/json' } })
 
@@ -152,19 +182,17 @@ router.post('/auth/login', async (request: Request, env: Env) => {
   const hash = await hashPassword(password)
   let row
   try {
-    row = await env.DB.prepare('SELECT id, password_hash FROM accounts WHERE email=?1')
+
+    row = await env.DB.prepare('SELECT id, password_hash, api_key FROM accounts WHERE email=?1')
       .bind(email)
       .first()
   } catch (err) {
-
     console.error('/auth/login query error', err)
     return new Response(JSON.stringify({ error: 'db error' }), { status: 500 })
-
   }
-  if (row && row.password_hash === hash) {
+  if (row && ((row.password_hash && row.password_hash === hash) || (row.api_key && row.api_key === hash))) {
     console.log('login success for account', row.id)
     return new Response(JSON.stringify({ id: row.id }), { headers: { 'Content-Type': 'application/json' } })
-
   }
   console.log('login failed for', email)
   return new Response(JSON.stringify({ error: 'invalid credentials' }), { status: 401 })
