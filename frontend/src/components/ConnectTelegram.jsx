@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 
 
 const API_BASE =
@@ -10,11 +10,32 @@ console.log('Using API base', API_BASE)
 
 
 
-export default function ConnectTelegram() {
-  const [step, setStep] = useState('phone')
+export default function ConnectTelegram({ accountId, sessionId, onSelectSession }) {
+  const [step, setStep] = useState('list')
   const [phone, setPhone] = useState('')
   const [code, setCode] = useState('')
   const [status, setStatus] = useState('')
+  const [sessions, setSessions] = useState([])
+
+  const fetchSessions = () => {
+    console.log('fetching sessions for', accountId)
+    fetch(`${API_BASE}/session/status?account_id=${accountId}`)
+      .then(r => r.json())
+      .then(d => {
+        console.log('session status data', d)
+        setSessions(d.sessions || [])
+        if ((d.sessions || []).length > 0) {
+          setStep('list')
+        } else {
+          setStep('phone')
+        }
+      })
+      .catch(e => console.error('status error', e))
+  }
+
+  useEffect(() => {
+    fetchSessions()
+  }, [accountId])
 
   const sendPhone = async e => {
     e.preventDefault()
@@ -23,10 +44,9 @@ export default function ConnectTelegram() {
       console.log('frontend sending phone', phone)
 
       const resp = await fetch(`${API_BASE}/session/connect`, {
-
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone }),
+        body: JSON.stringify({ phone, account_id: accountId }),
       })
 
       console.log('frontend connect status', resp.status)
@@ -49,10 +69,9 @@ export default function ConnectTelegram() {
       console.log('frontend verifying code', code)
 
       const resp = await fetch(`${API_BASE}/session/verify`, {
-
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone, code }),
+        body: JSON.stringify({ phone, code, account_id: accountId }),
       })
 
       console.log('frontend verify status', resp.status)
@@ -60,8 +79,11 @@ export default function ConnectTelegram() {
       console.log('frontend verify body', data)
       if (!resp.ok) throw new Error(JSON.stringify(data))
 
-      console.log('frontend verify success')
+      console.log('frontend verify success', data)
       setStatus('Account connected!')
+      fetchSessions()
+      onSelectSession && onSelectSession(data.session_id)
+      setStep('list')
     } catch (err) {
       console.error('frontend verify error', err)
       setStatus('Verification failed')
@@ -69,20 +91,43 @@ export default function ConnectTelegram() {
   }
 
   return (
-    <div className="p-4 max-w-md mx-auto space-y-4">
-      <h2 className="text-2xl font-semibold text-center">Connect Telegram</h2>
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+      <div className="max-w-md w-full bg-white p-6 rounded-lg shadow-md space-y-4">
+        <h2 className="text-2xl font-semibold text-center">Connect Telegram</h2>
+      {step === 'list' && (
+        <div className="space-y-2">
+          <p className="text-sm">Select a session:</p>
+          <ul className="space-y-1">
+            {sessions.map(s => (
+              <li key={s.id} className="flex items-center justify-between border p-2 rounded bg-gray-50">
+                <span className="font-medium">{s.phone || 'Session ' + s.id}</span>
+                <button
+                  className="text-sm underline hover:text-blue-600"
+                  onClick={() => {
+                    console.log('select session', s.id)
+                    onSelectSession && onSelectSession(s.id)
+                  }}
+                >
+                  {sessionId == s.id ? 'Selected' : 'Use'}
+                </button>
+              </li>
+            ))}
+          </ul>
+          <button className="text-sm underline hover:text-blue-600" onClick={() => setStep('phone')}>Add New Session</button>
+        </div>
+      )}
       {step === 'phone' && (
         <form onSubmit={sendPhone} className="space-y-2">
           <input
             type="tel"
             placeholder="Phone number"
-            className="border p-2 w-full"
+            className="border p-2 w-full rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
             value={phone}
             onChange={e => setPhone(e.target.value)}
           />
           <button
             type="submit"
-            className="w-full bg-blue-600 text-white py-2 rounded"
+            className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 rounded"
           >
             Send Code
           </button>
@@ -93,19 +138,23 @@ export default function ConnectTelegram() {
           <input
             type="text"
             placeholder="Telegram code"
-            className="border p-2 w-full"
+            className="border p-2 w-full rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
             value={code}
             onChange={e => setCode(e.target.value)}
           />
           <button
             type="submit"
-            className="w-full bg-green-600 text-white py-2 rounded"
+            className="w-full bg-green-600 hover:bg-green-700 text-white py-2 rounded"
           >
             Verify
           </button>
         </form>
       )}
+      {step === 'done' && (
+        <p className="text-center">Telegram already connected.</p>
+      )}
       {status && <p className="text-center text-sm text-gray-600">{status}</p>}
+      </div>
     </div>
   )
 }
