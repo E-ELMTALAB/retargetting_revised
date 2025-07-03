@@ -126,6 +126,7 @@ async function hashPassword(pw: string): Promise<string> {
     .join('');
 }
 
+
 // Sign up new account
 router.post('/auth/signup', async (request: Request, env: Env) => {
   const { email, password } = await request.json() as any
@@ -135,6 +136,7 @@ router.post('/auth/signup', async (request: Request, env: Env) => {
   }
   const hash = await hashPassword(password)
   try {
+
     const colRes: any = await env.DB.prepare('PRAGMA table_info(accounts)').all()
     const cols = Array.isArray(colRes) ? colRes : colRes.results || []
     const names = cols.map((c: any) => c.name)
@@ -159,12 +161,14 @@ router.post('/auth/signup', async (request: Request, env: Env) => {
     const res = await env.DB.prepare(sql).bind(...values).run()
     console.log('created account id', res.lastRowId)
     return new Response(JSON.stringify({ id: res.lastRowId }), { headers: { 'Content-Type': 'application/json' } })
+
   } catch (err: any) {
     console.error('/auth/signup error', err)
     if ((err.message || '').includes('UNIQUE')) {
       return new Response(JSON.stringify({ error: 'account exists' }), { status: 409 })
     }
     return new Response(JSON.stringify({ error: 'db error' }), { status: 500 })
+
   }
 })
 
@@ -178,6 +182,7 @@ router.post('/auth/login', async (request: Request, env: Env) => {
   const hash = await hashPassword(password)
   let row
   try {
+
     row = await env.DB.prepare('SELECT id, password_hash, api_key FROM accounts WHERE email=?1')
       .bind(email)
       .first()
@@ -191,6 +196,7 @@ router.post('/auth/login', async (request: Request, env: Env) => {
   }
   console.log('login failed for', email)
   return new Response(JSON.stringify({ error: 'invalid credentials' }), { status: 401 })
+
 })
 
 // Begin Telegram session - send code
@@ -499,6 +505,7 @@ export default {
     }
 
     await ensureSchema(env.DB)
+    await checkAccountsTable(env.DB)
 
     console.log('incoming request', request.method, new URL(request.url).pathname)
 
