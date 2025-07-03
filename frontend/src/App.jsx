@@ -3,11 +3,33 @@ import Login from './components/Login'
 import MainPage from './components/MainPage'
 
 export default function App() {
-  const [loggedIn, setLoggedIn] = useState(false)
+  const [accountId, setAccountId] = useState(() => localStorage.getItem('accountId'))
+  const [sessionId, setSessionId] = useState(() => localStorage.getItem('sessionId'))
 
-  if (!loggedIn) {
-    return <Login onLogin={() => setLoggedIn(true)} />
+  const handleLogin = id => {
+    console.log('App login', id)
+    setAccountId(id)
+    localStorage.setItem('accountId', id)
   }
 
-  return <MainPage onLogout={() => setLoggedIn(false)} />
+  const handleLogout = () => {
+    console.log('App logout')
+    setAccountId(null)
+    setSessionId(null)
+    localStorage.removeItem('accountId')
+    localStorage.removeItem('sessionId')
+  }
+
+  if (!accountId) {
+    return <Login onLogin={handleLogin} />
+  }
+
+  const handleSelectSession = id => {
+    console.log('App selected session', id)
+    setSessionId(id)
+    if (id) localStorage.setItem('sessionId', id)
+    else localStorage.removeItem('sessionId')
+  }
+
+  return <MainPage accountId={accountId} sessionId={sessionId} onSelectSession={handleSelectSession} onLogout={handleLogout} />
 }

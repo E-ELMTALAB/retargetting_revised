@@ -3,23 +3,27 @@
 CREATE TABLE accounts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     email TEXT NOT NULL UNIQUE,
-    api_key TEXT NOT NULL,
+    password_hash TEXT NOT NULL,
     plan_type TEXT
 );
 
 CREATE TABLE campaigns (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     account_id INTEGER NOT NULL,
+    telegram_session_id INTEGER,
     message_text TEXT,
     status TEXT,
     filters_json TEXT,
     quiet_hours_json TEXT,
     nudge_settings_json TEXT,
-    FOREIGN KEY (account_id) REFERENCES accounts(id)
+    FOREIGN KEY (account_id) REFERENCES accounts(id),
+    FOREIGN KEY (telegram_session_id) REFERENCES telegram_sessions(id)
 );
 
 CREATE TABLE telegram_sessions (
-    account_id INTEGER PRIMARY KEY,
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    account_id INTEGER NOT NULL,
+    phone TEXT,
     encrypted_session_data TEXT,
     FOREIGN KEY (account_id) REFERENCES accounts(id)
 );

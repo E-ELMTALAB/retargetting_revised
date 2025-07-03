@@ -1,9 +1,14 @@
-INSERT INTO accounts (id, email, api_key, plan_type) VALUES
-  (1, 'demo@example.com', 'demo_key', 'free');
+INSERT INTO accounts (id, email, password_hash, plan_type) VALUES
+  (1, 'demo@example.com', 'demo', 'free');
 
 INSERT INTO campaigns (id, account_id, message_text, status, filters_json, quiet_hours_json, nudge_settings_json)
 VALUES
   (1, 1, 'Hello {{first_name}}, check out our sale!', 'completed', '{}', '{}', '{}');
+
+INSERT INTO telegram_sessions (id, account_id, phone, encrypted_session_data)
+VALUES (1, 1, '+10000000000', 'dummy');
+
+UPDATE campaigns SET telegram_session_id=1 WHERE id=1;
 
 -- Some sent logs for analytics
 INSERT INTO sent_logs (account_id, campaign_id, user_phone, status, error_details)

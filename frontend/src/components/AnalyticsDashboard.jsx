@@ -23,7 +23,7 @@ Chart.register(
   Legend
 )
 
-export default function AnalyticsDashboard() {
+export default function AnalyticsDashboard({ accountId, sessionId }) {
   const API_BASE =
     import.meta.env.VITE_API_BASE ||
     'https://retargetting-worker.elmtalabx.workers.dev'
@@ -35,11 +35,13 @@ export default function AnalyticsDashboard() {
   const [topLines, setTopLines] = useState([])
 
   useEffect(() => {
-    console.log('AnalyticsDashboard mounted')
+    console.log('AnalyticsDashboard mounted', accountId, sessionId)
     const fetchData = async () => {
       try {
         console.log('Fetching analytics summary...')
-        const resp = await fetch(`${API_BASE}/analytics/summary`)
+        const url = `${API_BASE}/analytics/summary?account_id=${accountId}&session_id=${sessionId || ''}`
+        console.log('fetching', url)
+        const resp = await fetch(url)
         console.log('Fetch response:', resp)
         const data = await resp.json()
         console.log('Fetched data:', data)
@@ -123,7 +125,7 @@ export default function AnalyticsDashboard() {
       }
     }
     fetchData()
-  }, [])
+  }, [accountId, sessionId])
 
   useEffect(() => {
     console.log('metrics state updated:', metrics)
