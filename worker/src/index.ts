@@ -141,7 +141,10 @@ router.post('/session/connect', async (request: Request, env: Env) => {
   if (!resp.ok) {
     return new Response(JSON.stringify(data), { status: resp.status })
   }
-
+  if (!(data && (data as any).session && (data as any).phone_code_hash)) {
+    console.error('worker /session/connect missing session or phone_code_hash', data)
+    return new Response(JSON.stringify({ error: 'Failed to send code', details: data }), { status: 500 })
+  }
   await env.DB.prepare(
     'INSERT OR REPLACE INTO pending_sessions (account_id, phone, session, phone_code_hash) VALUES (?1, ?2, ?3, ?4)'
   )

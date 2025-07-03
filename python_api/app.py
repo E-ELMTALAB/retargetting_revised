@@ -69,9 +69,7 @@ def session_connect():
         return jsonify({'error': 'phone required'}), 400
 
     async def _send_code():
-        API_ID = 123456  # <-- Replace with your API ID
-        API_HASH = '0123456789abcdef0123456789abcdef'  # <-- Replace with your API Hash
-        client = TelegramClient(None, API_ID, API_HASH)
+        client = TelegramClient(StringSession(), API_ID, API_HASH)
         await client.connect()
         try:
             result = await client.send_code_request(phone)
@@ -106,7 +104,7 @@ def session_verify():
         return jsonify({'error': 'missing parameters'}), 400
 
     async def _sign_in():
-        client = TelegramClient(None, API_ID, API_HASH)
+        client = TelegramClient(StringSession(session_str), API_ID, API_HASH)
         await client.connect()
         try:
             await client.sign_in(phone=phone, code=code, phone_code_hash=phone_code_hash)
