@@ -304,11 +304,12 @@ router.get('/analytics/summary', async (request: Request, env: Env) => {
       .first()
     console.log('revenueRow', revenueRow)
 
-    const categoryRows = await env.DB.prepare(
+    const categoryRowsResult = await env.DB.prepare(
       'SELECT category, COUNT(*) as count FROM customer_categories WHERE account_id=?1 GROUP BY category'
     )
       .bind(accountId)
       .all()
+    const categoryRows = Array.isArray(categoryRowsResult) ? categoryRowsResult : categoryRowsResult.results || []
     console.log('categoryRows', categoryRows)
 
     const campaignRows = await env.DB.prepare(

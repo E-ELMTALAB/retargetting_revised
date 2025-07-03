@@ -72,8 +72,9 @@ export default function AnalyticsDashboard() {
             },
           ],
         })
-        const catLabels = (data.categories || []).map((c) => c.category)
-        const catData = (data.categories || []).map((c) => c.count)
+        const safeCategories = Array.isArray(data.categories) ? data.categories : []
+        const catLabels = safeCategories.map((c) => c.category)
+        const catData = safeCategories.map((c) => c.count)
         console.log('catLabels:', catLabels, 'catData:', catData)
         setCategoryData({
           labels: catLabels,
