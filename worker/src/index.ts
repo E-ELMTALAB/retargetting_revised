@@ -116,6 +116,27 @@ async function hashPassword(pw: string): Promise<string> {
     .join('');
 }
 
+// Add a function to check the accounts table and columns at startup
+async function checkAccountsTable(db: D1Database) {
+  try {
+    const row = await db.prepare("PRAGMA table_info(accounts)").first();
+    if (!row) {
+      console.error('[SCHEMA ERROR] accounts table does not exist!');
+    } else {
+      const columns = await db.prepare("PRAGMA table_info(accounts)").all();
+      const colNames = (Array.isArray(columns) ? columns : columns.results || []).map((c: any) => c.name);
+      const required = ['id', 'email', 'password_hash', 'plan_type'];
+      for (const r of required) {
+        if (!colNames.includes(r)) {
+          console.error(`[SCHEMA ERROR] accounts table missing column: ${r}`);
+        }
+      }
+    }
+  } catch (err) {
+    console.error('[SCHEMA CHECK ERROR]', err);
+  }
+}
+
 // Sign up new account
 router.post('/auth/signup', async (request: Request, env: Env) => {
   const { email, password } = await request.json() as any
@@ -132,7 +153,7 @@ router.post('/auth/signup', async (request: Request, env: Env) => {
     return new Response(JSON.stringify({ id: res.lastRowId }), { headers: { 'Content-Type': 'application/json' } })
   } catch (err) {
     console.error('/auth/signup error', err)
-    return new Response(JSON.stringify({ error: 'account exists' }), { status: 400 })
+    return new Response(JSON.stringify({ error: 'account exists', details: err && ((err as any).stack || (err as any).message || err.toString()) }), { status: 400 })
   }
 })
 
@@ -144,9 +165,15 @@ router.post('/auth/login', async (request: Request, env: Env) => {
     return new Response(JSON.stringify({ error: 'missing parameters' }), { status: 400 })
   }
   const hash = await hashPassword(password)
-  const row = await env.DB.prepare('SELECT id, password_hash FROM accounts WHERE email=?1')
-    .bind(email)
-    .first()
+  let row
+  try {
+    row = await env.DB.prepare('SELECT id, password_hash FROM accounts WHERE email=?1')
+      .bind(email)
+      .first()
+  } catch (err) {
+    console.error('/auth/login db error', err)
+    return new Response(JSON.stringify({ error: 'db error', details: err && ((err as any).stack || (err as any).message || err.toString()) }), { status: 500 })
+  }
   if (row && row.password_hash === hash) {
     console.log('login success for account', row.id)
     return new Response(JSON.stringify({ id: row.id }), { headers: { 'Content-Type': 'application/json' } })
@@ -462,6 +489,7 @@ export default {
     }
 
     await ensureSchema(env.DB)
+    await checkAccountsTable(env.DB)
 
     console.log('incoming request', request.method, new URL(request.url).pathname)
 
