@@ -7,6 +7,7 @@ import ConnectTelegram from './ConnectTelegram'
 import CategoryManager from './CategoryManager'
 
 export default function MainPage({ onLogout, accountId, sessionId, onSelectSession }) {
+  const [campaignId, setCampaignId] = React.useState(null)
   return (
     <div className="flex h-screen">
       <aside className="w-64 bg-gray-100 p-6 space-y-4">
@@ -90,9 +91,9 @@ export default function MainPage({ onLogout, accountId, sessionId, onSelectSessi
       <main className="flex-1 p-4 overflow-auto">
         <Routes>
           <Route path="/" element={<Navigate to="/editor" replace />} />
-          <Route path="/editor" element={<CampaignEditor />} />
+          <Route path="/editor" element={<CampaignEditor accountId={accountId} sessionId={sessionId} onSelectCampaign={setCampaignId} />} />
           <Route path="/analytics" element={<AnalyticsDashboard accountId={accountId} sessionId={sessionId} />} />
-          <Route path="/monitor" element={<CampaignMonitor sessionId={sessionId} />} />
+          <Route path="/monitor" element={<CampaignMonitor campaignId={campaignId} />} />
           <Route path="/connect" element={<ConnectTelegram accountId={accountId} sessionId={sessionId} onSelectSession={onSelectSession} />} />
           <Route path="/categories" element={<CategoryManager />} />
         </Routes>

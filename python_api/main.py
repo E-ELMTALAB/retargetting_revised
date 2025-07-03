@@ -10,6 +10,9 @@ TELEGRAM_API_ID = 27418503
 TELEGRAM_API_HASH = "911f278e674b5aaa7a4ecf14a49ea4d7"
 SESSION_FILE = os.path.join(os.path.dirname(__file__), "me.session")
 
+# In-memory store of logs per campaign
+CAMPAIGN_LOGS = {}
+
 @app.after_request
 def add_cors_headers(response):
     """Add permissive CORS headers to all responses."""
@@ -48,9 +51,13 @@ def execute_campaign():
     session_str = payload.get('session')
     message = payload.get('message')
     recipients = payload.get('recipients', [])
+    account_id = payload.get('account_id')
+    campaign_id = payload.get('campaign_id')
 
     if not session_str or not message or not recipients:
         return jsonify({'error': 'missing parameters'}), 400
+    if campaign_id is None:
+        return jsonify({'error': 'campaign_id required'}), 400
 
     async def _send():
         client = get_telegram_client(session_str)
@@ -60,16 +67,20 @@ def execute_campaign():
             try:
                 await client.send_message(phone, message)
                 results.append({'phone': phone, 'status': 'sent'})
+                CAMPAIGN_LOGS.setdefault(campaign_id, []).append({'phone': phone, 'status': 'sent'})
                 await asyncio.sleep(1)
             except errors.FloodWaitError as e:
                 await asyncio.sleep(e.seconds + 1)
                 try:
                     await client.send_message(phone, message)
                     results.append({'phone': phone, 'status': 'sent'})
+                    CAMPAIGN_LOGS.setdefault(campaign_id, []).append({'phone': phone, 'status': 'sent'})
                 except Exception as err:
                     results.append({'phone': phone, 'status': 'failed', 'error': str(err)})
+                    CAMPAIGN_LOGS.setdefault(campaign_id, []).append({'phone': phone, 'status': 'failed', 'error': str(err)})
             except Exception as err:
                 results.append({'phone': phone, 'status': 'failed', 'error': str(err)})
+                CAMPAIGN_LOGS.setdefault(campaign_id, []).append({'phone': phone, 'status': 'failed', 'error': str(err)})
         await client.disconnect()
         return results
 
@@ -194,6 +205,13 @@ def classify_text():
                     matched.append(name)
                     break
     return jsonify({'matches': matched})
+
+
+@app.route('/campaign_logs/<int:campaign_id>', methods=['GET'])
+def get_campaign_logs(campaign_id):
+    """Return stored logs for a campaign."""
+    logs = CAMPAIGN_LOGS.get(campaign_id, [])
+    return jsonify({'logs': logs})
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
