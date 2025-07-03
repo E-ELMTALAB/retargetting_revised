@@ -127,7 +127,7 @@ router.post('/session/connect', async (request: Request, env: Env) => {
     })
   } catch (err) {
     console.error('worker connect fetch error', err)
-    return new Response('Failed to contact API', { status: 500 })
+    return new Response(JSON.stringify({ error: 'Failed to contact API', details: err && ((err as any).stack || (err as any).message || err.toString()) }), { status: 500 })
   }
   console.log('python api response status', resp.status)
   let data
@@ -135,21 +135,27 @@ router.post('/session/connect', async (request: Request, env: Env) => {
     data = await resp.json()
   } catch (err) {
     console.error('worker connect json error', err)
-    return new Response('Bad response from API', { status: 500 })
+    return new Response(JSON.stringify({ error: 'Bad response from API', details: err && ((err as any).stack || (err as any).message || err.toString()) }), { status: 500 })
   }
   console.log('python api response body', data)
   if (!resp.ok) {
-    return new Response(JSON.stringify(data), { status: resp.status })
+    console.error('worker /session/connect python api error', data)
+    return new Response(JSON.stringify({ error: 'Python API error', details: data }), { status: resp.status })
   }
   if (!(data && (data as any).session && (data as any).phone_code_hash)) {
     console.error('worker /session/connect missing session or phone_code_hash', data)
     return new Response(JSON.stringify({ error: 'Failed to send code', details: data }), { status: 500 })
   }
-  await env.DB.prepare(
-    'INSERT OR REPLACE INTO pending_sessions (account_id, phone, session, phone_code_hash) VALUES (?1, ?2, ?3, ?4)'
-  )
-    .bind(accountId, phone, (data as any).session, (data as any).phone_code_hash)
-    .run()
+  try {
+    await env.DB.prepare(
+      'INSERT OR REPLACE INTO pending_sessions (account_id, phone, session, phone_code_hash) VALUES (?1, ?2, ?3, ?4)'
+    )
+      .bind(accountId, phone, (data as any).session, (data as any).phone_code_hash)
+      .run()
+  } catch (err) {
+    console.error('worker /session/connect DB error', err)
+    return new Response(JSON.stringify({ error: 'DB error', details: err && ((err as any).stack || (err as any).message || err.toString()) }), { status: 500 })
+  }
   return new Response(JSON.stringify({ status: 'code_sent' }), {
     headers: { 'Content-Type': 'application/json' }
   })
