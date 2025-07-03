@@ -51,8 +51,9 @@ export default function AnalyticsDashboard() {
           { label: 'CTR', value: ctr },
           { label: 'Revenue', value: `$${m.revenue || 0}` },
         ])
-        const revLabels = (data.revenueByDay || []).map((r) => r.day)
-        const revValues = (data.revenueByDay || []).map((r) => r.rev)
+        const safeRevenueByDay = Array.isArray(data.revenueByDay) ? data.revenueByDay : []
+        const revLabels = safeRevenueByDay.map((r) => r.day)
+        const revValues = safeRevenueByDay.map((r) => r.rev)
         setRevenueData({
           labels: revLabels,
           datasets: [

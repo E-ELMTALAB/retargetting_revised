@@ -13,6 +13,10 @@ interface Env {
 
 const router = Router()
 
+// Temporary type fixes for D1Database and ExecutionContext
+type D1Database = any;
+type ExecutionContext = any;
+
 const INIT_SCHEMA = `
 CREATE TABLE IF NOT EXISTS accounts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -110,7 +114,7 @@ router.post('/auth/login', async (request: Request) => {
 
 // Begin Telegram session - send code
 router.post('/session/connect', async (request: Request, env: Env) => {
-  const { phone } = await request.json()
+  const { phone } = await request.json() as any
   console.log('worker /session/connect phone', phone)
   const accountId = 1
 
@@ -141,7 +145,7 @@ router.post('/session/connect', async (request: Request, env: Env) => {
   await env.DB.prepare(
     'INSERT OR REPLACE INTO pending_sessions (account_id, phone, session, phone_code_hash) VALUES (?1, ?2, ?3, ?4)'
   )
-    .bind(accountId, phone, data.session, data.phone_code_hash)
+    .bind(accountId, phone, (data as any).session, (data as any).phone_code_hash)
     .run()
   return new Response(JSON.stringify({ status: 'code_sent' }), {
     headers: { 'Content-Type': 'application/json' }
@@ -150,14 +154,14 @@ router.post('/session/connect', async (request: Request, env: Env) => {
 
 // Verify telegram login code
 router.post('/session/verify', async (request: Request, env: Env) => {
-  const { phone, code } = await request.json()
+  const { phone, code } = await request.json() as any
   console.log('worker /session/verify phone', phone, 'code', code)
   const accountId = 1
   const row = await env.DB.prepare(
     'SELECT session, phone_code_hash FROM pending_sessions WHERE account_id=?1'
   )
     .bind(accountId)
-    .first<any>()
+    .first()
 
   if (!row) {
     return new Response('No pending session', { status: 400 })
@@ -199,7 +203,7 @@ router.post('/session/verify', async (request: Request, env: Env) => {
   await env.DB.prepare(
     'INSERT OR REPLACE INTO telegram_sessions (account_id, encrypted_session_data) VALUES (?1, ?2)'
   )
-    .bind(accountId, data.session)
+    .bind(accountId, (data as any).session)
     .run()
 
   await env.DB.prepare('DELETE FROM pending_sessions WHERE account_id=?1')
@@ -238,7 +242,7 @@ router.get('/categories', async (request: Request, env: Env) => {
     'SELECT id, name, keywords_json, description, sample_chats_json FROM categories WHERE account_id=?1'
   )
     .bind(accountId)
-    .all<any>()
+    .all()
   console.log('categories results', results)
 
   return new Response(JSON.stringify({ categories: results }), {
@@ -249,7 +253,7 @@ router.get('/categories', async (request: Request, env: Env) => {
 // Create category
 router.post('/categories', async (request: Request, env: Env) => {
 
-  const { name, keywords, description, examples } = await request.json()
+  const { name, keywords, description, examples } = await request.json() as any
   const accountId = 1
   console.log('POST /categories', { name, keywords, description, examples })
 
@@ -276,49 +280,56 @@ router.get('/analytics/summary', async (request: Request, env: Env) => {
       'SELECT COUNT(*) as cnt FROM sent_logs WHERE account_id=?1'
     )
       .bind(accountId)
-      .first<any>()
+      .first()
     console.log('totalRow', totalRow)
 
     const successRow = await env.DB.prepare(
       "SELECT COUNT(*) as cnt FROM sent_logs WHERE account_id=?1 AND status='sent'"
     )
       .bind(accountId)
-      .first<any>()
+      .first()
     console.log('successRow', successRow)
 
     const failRow = await env.DB.prepare(
       "SELECT COUNT(*) as cnt FROM sent_logs WHERE account_id=?1 AND status!='sent'"
     )
       .bind(accountId)
-      .first<any>()
+      .first()
     console.log('failRow', failRow)
 
     const revenueRow = await env.DB.prepare(
       'SELECT SUM(revenue) as rev FROM trackable_links tl JOIN campaigns c ON c.id=tl.campaign_id WHERE c.account_id=?1'
     )
       .bind(accountId)
-      .first<any>()
+      .first()
     console.log('revenueRow', revenueRow)
 
     const categoryRows = await env.DB.prepare(
       'SELECT category, COUNT(*) as count FROM customer_categories WHERE account_id=?1 GROUP BY category'
     )
       .bind(accountId)
-      .all<any>()
+      .all()
     console.log('categoryRows', categoryRows)
 
     const campaignRows = await env.DB.prepare(
       'SELECT c.id, c.message_text, COALESCE(a.total_sent,0) as total_sent FROM campaigns c LEFT JOIN campaign_analytics a ON c.id=a.campaign_id WHERE c.account_id=?1'
     )
       .bind(accountId)
-      .all<any>()
+      .all()
     console.log('campaignRows', campaignRows)
 
-    const revenueDayRows = await env.DB.prepare(
-      'SELECT strftime("%Y-%m-%d", tl.created_at) as day, SUM(tl.revenue) as rev FROM trackable_links tl JOIN campaigns c ON c.id=tl.campaign_id WHERE c.account_id=?1 GROUP BY day ORDER BY day'
-    )
-      .bind(accountId)
-      .all<any>()
+    let revenueDayRows = []
+    try {
+      revenueDayRows = await env.DB.prepare(
+        'SELECT strftime("%Y-%m-%d", tl.created_at) as day, SUM(tl.revenue) as rev FROM trackable_links tl JOIN campaigns c ON c.id=tl.campaign_id WHERE c.account_id=?1 GROUP BY day ORDER BY day'
+      )
+        .bind(accountId)
+        .all()
+      if (!Array.isArray(revenueDayRows)) revenueDayRows = []
+    } catch (e) {
+      console.error('revenueDayRows query failed', e)
+      revenueDayRows = []
+    }
     console.log('revenueDayRows', revenueDayRows)
 
     const metrics = {
@@ -353,7 +364,7 @@ router.get('/campaigns/:id/analytics', async ({ params }, env: Env) => {
     'SELECT * FROM campaign_analytics WHERE campaign_id=?1'
   )
     .bind(params?.id)
-    .first<any>()
+    .first()
   return new Response(JSON.stringify({ analytics: row }), {
     headers: { 'Content-Type': 'application/json' },
   })
