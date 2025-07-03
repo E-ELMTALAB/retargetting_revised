@@ -1,12 +1,13 @@
 import React from 'react'
 import { NavLink, Routes, Route, Navigate } from 'react-router-dom'
-import CampaignEditor from './CampaignEditor'
+import Campaigns from './Campaigns'
 import AnalyticsDashboard from './AnalyticsDashboard'
 import CampaignMonitor from './CampaignMonitor'
 import ConnectTelegram from './ConnectTelegram'
 import CategoryManager from './CategoryManager'
 
 export default function MainPage({ onLogout, accountId, sessionId, onSelectSession }) {
+  const [campaignId, setCampaignId] = React.useState(null)
   return (
     <div className="flex h-screen">
       <aside className="w-64 bg-gray-100 p-6 space-y-4">
@@ -15,14 +16,14 @@ export default function MainPage({ onLogout, accountId, sessionId, onSelectSessi
         <ul className="space-y-1">
           <li>
             <NavLink
-              to="/editor"
+              to="/campaigns"
               className={({ isActive }) =>
                 `block px-3 py-2 rounded-md text-sm font-medium transition-colors ${
                   isActive ? 'bg-blue-600 text-white' : 'text-gray-700 hover:bg-blue-50'
                 }`
               }
             >
-              Campaign Editor
+              Campaigns
             </NavLink>
           </li>
           <li>
@@ -89,10 +90,10 @@ export default function MainPage({ onLogout, accountId, sessionId, onSelectSessi
       </aside>
       <main className="flex-1 p-4 overflow-auto">
         <Routes>
-          <Route path="/" element={<Navigate to="/editor" replace />} />
-          <Route path="/editor" element={<CampaignEditor />} />
+          <Route path="/" element={<Navigate to="/campaigns" replace />} />
+          <Route path="/campaigns" element={<Campaigns accountId={accountId} sessionId={sessionId} onSelectCampaign={setCampaignId} />} />
           <Route path="/analytics" element={<AnalyticsDashboard accountId={accountId} sessionId={sessionId} />} />
-          <Route path="/monitor" element={<CampaignMonitor sessionId={sessionId} />} />
+          <Route path="/monitor" element={<CampaignMonitor campaignId={campaignId} />} />
           <Route path="/connect" element={<ConnectTelegram accountId={accountId} sessionId={sessionId} onSelectSession={onSelectSession} />} />
           <Route path="/categories" element={<CategoryManager />} />
         </Routes>
