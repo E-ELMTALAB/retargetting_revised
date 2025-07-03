@@ -90,8 +90,8 @@ export default function MainPage({ onLogout, accountId, sessionId, onSelectSessi
       </aside>
       <main className="flex-1 p-4 overflow-auto">
         <Routes>
-          <Route path="/" element={<Navigate to="/campaigns" replace />} />
-          <Route path="/campaigns" element={<Campaigns accountId={accountId} sessionId={sessionId} onSelectCampaign={setCampaignId} />} />
+          <Route path="/" element={<Navigate to="/editor" replace />} />
+          <Route path="/editor" element={<CampaignEditor accountId={accountId} sessionId={sessionId} onSelectCampaign={setCampaignId} />} />
           <Route path="/analytics" element={<AnalyticsDashboard accountId={accountId} sessionId={sessionId} />} />
           <Route path="/monitor" element={<CampaignMonitor campaignId={campaignId} />} />
           <Route path="/connect" element={<ConnectTelegram accountId={accountId} sessionId={sessionId} onSelectSession={onSelectSession} />} />
