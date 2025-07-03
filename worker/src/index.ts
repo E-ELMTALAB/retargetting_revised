@@ -110,9 +110,6 @@ async function ensureSchema(db: D1Database) {
       console.log('adding password_hash column');
       try { await db.exec('ALTER TABLE accounts ADD COLUMN password_hash TEXT'); } catch (e) { console.log('alter accounts error', e); }
     }
-    if (!names.includes('api_key')) {
-      // some older schema may lack api_key, that's fine
-    }
   } catch (err) {
     console.error('schema init error', err);
   }
@@ -156,12 +153,6 @@ router.post('/auth/signup', async (request: Request, env: Env) => {
       values.push(hash)
       idx++
     }
-    if (names.includes('api_key')) {
-      fields.push('api_key')
-      placeholders.push('?' + idx)
-      values.push(hash)
-      idx++
-    }
     const sql = `INSERT INTO accounts (${fields.join(', ')}) VALUES (${placeholders.join(', ')})`
     console.log('signup query', sql)
     const res = await env.DB.prepare(sql).bind(...values).run()
@@ -186,14 +177,14 @@ router.post('/auth/login', async (request: Request, env: Env) => {
   const hash = await hashPassword(password)
   let row
   try {
-    row = await env.DB.prepare('SELECT id, password_hash, api_key FROM accounts WHERE email=?1')
+    row = await env.DB.prepare('SELECT id, password_hash FROM accounts WHERE email=?1')
       .bind(email)
       .first()
   } catch (err) {
     console.error('/auth/login query error', err)
     return jsonResponse({ error: 'db error' }, 500)
   }
-  if (row && ((row.password_hash && row.password_hash === hash) || (row.api_key && row.api_key === hash))) {
+  if (row && row.password_hash && row.password_hash === hash) {
     console.log('login success for account', row.id)
     return jsonResponse({ id: row.id })
   }
