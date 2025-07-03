@@ -1,5 +1,5 @@
 from flask import Flask, request, jsonify
-from telethon import TelegramClient
+from telethon import TelegramClient, errors
 from telethon.sessions import StringSession
 from telethon.errors import SessionPasswordNeededError
 import asyncio
@@ -9,6 +9,21 @@ app = Flask(__name__)
 TELEGRAM_API_ID = 27418503
 TELEGRAM_API_HASH = "911f278e674b5aaa7a4ecf14a49ea4d7"
 SESSION_FILE = os.path.join(os.path.dirname(__file__), "me.session")
+
+@app.after_request
+def add_cors_headers(response):
+    """Add permissive CORS headers to all responses."""
+    response.headers['Access-Control-Allow-Origin'] = '*'
+    response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+    response.headers['Access-Control-Allow-Methods'] = 'GET,POST,OPTIONS'
+    return response
+
+
+@app.errorhandler(Exception)
+def handle_exception(e):
+    """Return JSON for uncaught exceptions."""
+    print('Unhandled error:', repr(e))
+    return jsonify({'error': str(e)}), 500
 
 print(f"TELEGRAM_API_ID: {TELEGRAM_API_ID}, TELEGRAM_API_HASH: {TELEGRAM_API_HASH}")
 print(f"Session file exists: {os.path.exists(SESSION_FILE)} at {SESSION_FILE}")
@@ -28,21 +43,43 @@ def health():
 
 @app.route('/execute_campaign', methods=['POST'])
 def execute_campaign():
-    print("[DEBUG] /execute_campaign called")
+    """Send a text message to a list of recipient phones sequentially."""
+    payload = request.get_json(force=True)
+    session_str = payload.get('session')
+    message = payload.get('message')
+    recipients = payload.get('recipients', [])
+
+    if not session_str or not message or not recipients:
+        return jsonify({'error': 'missing parameters'}), 400
+
+    async def _send():
+        client = get_telegram_client(session_str)
+        await client.connect()
+        results = []
+        for phone in recipients:
+            try:
+                await client.send_message(phone, message)
+                results.append({'phone': phone, 'status': 'sent'})
+                await asyncio.sleep(1)
+            except errors.FloodWaitError as e:
+                await asyncio.sleep(e.seconds + 1)
+                try:
+                    await client.send_message(phone, message)
+                    results.append({'phone': phone, 'status': 'sent'})
+                except Exception as err:
+                    results.append({'phone': phone, 'status': 'failed', 'error': str(err)})
+            except Exception as err:
+                results.append({'phone': phone, 'status': 'failed', 'error': str(err)})
+        await client.disconnect()
+        return results
+
     try:
-        payload = request.get_json(force=True)
-        print(f"[DEBUG] Payload: {payload}")
-        account_id = payload.get('account_id')
-        campaign_id = payload.get('campaign_id')
-        # TODO: Implement message sending logic, retries and error handling
-        return jsonify({
-            'status': 'accepted',
-            'account_id': account_id,
-            'campaign_id': campaign_id
-        })
+        results = asyncio.run(_send())
     except Exception as e:
-        print(f"[ERROR] /execute_campaign: {e}")
+        print('[ERROR] execute_campaign', e)
         return jsonify({'error': str(e)}), 500
+
+    return jsonify({'status': 'completed', 'results': results})
 
 
 @app.route('/session/connect', methods=['POST'])
@@ -131,6 +168,32 @@ def session_verify():
     except Exception as e:
         print(f"[ERROR] /session/verify: {e}")
         return jsonify({'error': str(e)}), 500
+
+
+@app.route('/classify', methods=['POST'])
+def classify_text():
+    """Classify text based on provided categories and keywords."""
+    data = request.get_json(force=True)
+    text = data.get('text', '')
+    categories = data.get('categories', [])
+    text_lower = text.lower()
+    matched = []
+    for cat in categories:
+        name = cat.get('name')
+        kws = cat.get('keywords', [])
+        examples = cat.get('examples', [])
+        found = False
+        for kw in kws:
+            if kw.lower() in text_lower:
+                matched.append(name)
+                found = True
+                break
+        if not found:
+            for ex in examples:
+                if ex.lower() in text_lower:
+                    matched.append(name)
+                    break
+    return jsonify({'matches': matched})
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)

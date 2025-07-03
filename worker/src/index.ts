@@ -329,21 +329,71 @@ router.get('/session/status', async (request: Request, env: Env) => {
 })
 
 // Campaign creation placeholder
-router.post('/campaigns', async (request: Request) => {
-  console.log('POST /campaigns')
-  // TODO: validate JWT and create campaign in D1
-  return new Response(JSON.stringify({ status: 'created' }), {
-    headers: { 'Content-Type': 'application/json' },
-  })
+router.post('/campaigns', async (request: Request, env: Env) => {
+  const { account_id, telegram_session_id, message_text } = await request.json() as any
+  console.log('POST /campaigns', { account_id, telegram_session_id })
+  const accountId = Number(account_id || 0)
+  if (!accountId || !telegram_session_id || !message_text) {
+    return jsonResponse({ error: 'missing parameters' }, 400)
+  }
+
+  const res = await env.DB.prepare(
+    'INSERT INTO campaigns (account_id, telegram_session_id, message_text, status) VALUES (?1, ?2, ?3, ?4)'
+  )
+    .bind(accountId, telegram_session_id, message_text, 'created')
+    .run()
+
+  return jsonResponse({ id: res.lastRowId })
 })
 
 // Start campaign - schedule job
-router.post('/campaigns/:id/start', async ({ params }) => {
-  console.log('POST /campaigns/:id/start', params?.id)
-  // TODO: enqueue job payload to worker queue for Python API
-  return new Response(JSON.stringify({ status: 'scheduled', id: params?.id }), {
-    headers: { 'Content-Type': 'application/json' },
-  })
+router.post('/campaigns/:id/start', async ({ params }, env: Env) => {
+  const id = Number(params?.id || 0)
+  console.log('POST /campaigns/:id/start', id)
+  if (!id) return jsonResponse({ error: 'invalid id' }, 400)
+
+  const row = await env.DB.prepare(
+    `SELECT c.id, c.account_id, c.message_text, t.encrypted_session_data
+     FROM campaigns c JOIN telegram_sessions t ON c.telegram_session_id=t.id
+     WHERE c.id=?1`
+  ).bind(id).first()
+
+  if (!row) return jsonResponse({ error: 'not found' }, 404)
+
+  const phonesRes = await env.DB.prepare(
+    'SELECT user_phone FROM customer_categories WHERE account_id=?1'
+  ).bind(row.account_id).all()
+  const phoneRows = Array.isArray(phonesRes) ? phonesRes : phonesRes.results || []
+  const recipients = phoneRows.map((r: any) => r.user_phone)
+
+  let resp: Response
+  try {
+    resp = await fetch(`${env.PYTHON_API_URL}/execute_campaign`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        session: row.encrypted_session_data,
+        message: row.message_text,
+        recipients,
+        account_id: row.account_id,
+        campaign_id: row.id,
+      })
+    })
+  } catch (err) {
+    console.error('fetch execute_campaign error', err)
+    return jsonResponse({ error: 'api request failed' }, 500)
+  }
+
+  const data = await resp.json().catch(() => ({}))
+  if (!resp.ok) {
+    return jsonResponse({ error: 'python error', details: data }, resp.status)
+  }
+
+  await env.DB.prepare('UPDATE campaigns SET status=?1 WHERE id=?2')
+    .bind('running', id)
+    .run()
+
+  return jsonResponse({ status: 'started', result: data })
 })
 
 // List categories
