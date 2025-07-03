@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react'
 
-export default function CampaignMonitor() {
+export default function CampaignMonitor({ sessionId }) {
   const [progress, setProgress] = useState(0)
   const [errors, setErrors] = useState([])
   const [logs, setLogs] = useState([])
 
   // mock progress simulation
   useEffect(() => {
+    console.log('CampaignMonitor mount session', sessionId)
     const id = setInterval(() => {
       setProgress(p => {
         const next = p < 100 ? p + 5 : 100
