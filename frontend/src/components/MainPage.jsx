@@ -5,6 +5,7 @@ import AnalyticsDashboard from './AnalyticsDashboard'
 import CampaignMonitor from './CampaignMonitor'
 import ConnectTelegram from './ConnectTelegram'
 import CategoryManager from './CategoryManager'
+import CampaignEditor from './CampaignEditor'
 
 /* hi */
 
