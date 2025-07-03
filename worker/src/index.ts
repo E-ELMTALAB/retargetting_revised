@@ -126,17 +126,23 @@ async function hashPassword(pw: string): Promise<string> {
     .join('');
 }
 
+// Helper to return JSON with CORS headers
+function jsonResponse(obj: any, status = 200) {
+  return new Response(JSON.stringify(obj), {
+    status,
+    headers: { 'Content-Type': 'application/json', ...corsHeaders }
+  })
+}
 
 // Sign up new account
 router.post('/auth/signup', async (request: Request, env: Env) => {
   const { email, password } = await request.json() as any
   console.log('POST /auth/signup', email)
   if (!email || !password) {
-    return new Response(JSON.stringify({ error: 'missing parameters' }), { status: 400 })
+    return jsonResponse({ error: 'missing parameters' }, 400)
   }
   const hash = await hashPassword(password)
   try {
-
     const colRes: any = await env.DB.prepare('PRAGMA table_info(accounts)').all()
     const cols = Array.isArray(colRes) ? colRes : colRes.results || []
     const names = cols.map((c: any) => c.name)
@@ -160,15 +166,13 @@ router.post('/auth/signup', async (request: Request, env: Env) => {
     console.log('signup query', sql)
     const res = await env.DB.prepare(sql).bind(...values).run()
     console.log('created account id', res.lastRowId)
-    return new Response(JSON.stringify({ id: res.lastRowId }), { headers: { 'Content-Type': 'application/json' } })
-
+    return jsonResponse({ id: res.lastRowId })
   } catch (err: any) {
     console.error('/auth/signup error', err)
     if ((err.message || '').includes('UNIQUE')) {
-      return new Response(JSON.stringify({ error: 'account exists' }), { status: 409 })
+      return jsonResponse({ error: 'account exists' }, 409)
     }
-    return new Response(JSON.stringify({ error: 'db error' }), { status: 500 })
-
+    return jsonResponse({ error: 'db error' }, 500)
   }
 })
 
@@ -177,26 +181,24 @@ router.post('/auth/login', async (request: Request, env: Env) => {
   const { email, password } = await request.json() as any
   console.log('POST /auth/login', email)
   if (!email || !password) {
-    return new Response(JSON.stringify({ error: 'missing parameters' }), { status: 400 })
+    return jsonResponse({ error: 'missing parameters' }, 400)
   }
   const hash = await hashPassword(password)
   let row
   try {
-
     row = await env.DB.prepare('SELECT id, password_hash, api_key FROM accounts WHERE email=?1')
       .bind(email)
       .first()
   } catch (err) {
     console.error('/auth/login query error', err)
-    return new Response(JSON.stringify({ error: 'db error' }), { status: 500 })
+    return jsonResponse({ error: 'db error' }, 500)
   }
   if (row && ((row.password_hash && row.password_hash === hash) || (row.api_key && row.api_key === hash))) {
     console.log('login success for account', row.id)
-    return new Response(JSON.stringify({ id: row.id }), { headers: { 'Content-Type': 'application/json' } })
+    return jsonResponse({ id: row.id })
   }
   console.log('login failed for', email)
-  return new Response(JSON.stringify({ error: 'invalid credentials' }), { status: 401 })
-
+  return jsonResponse({ error: 'invalid credentials' }, 401)
 })
 
 // Begin Telegram session - send code
@@ -505,7 +507,6 @@ export default {
     }
 
     await ensureSchema(env.DB)
-    await checkAccountsTable(env.DB)
 
     console.log('incoming request', request.method, new URL(request.url).pathname)
 
