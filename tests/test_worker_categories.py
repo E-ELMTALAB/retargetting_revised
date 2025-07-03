@@ -1,5 +1,7 @@
 import os, requests
-API=os.environ.get('WORKER_BASE','https://retargetting-worker.elmtalabx.workers.dev/')
+
+API=os.environ.get('WORKER_BASE','https://retargetting-worker.elmtalabx.workers.dev')
+
 
 if __name__=='__main__':
     r=requests.get(f"{API}/categories", timeout=10)

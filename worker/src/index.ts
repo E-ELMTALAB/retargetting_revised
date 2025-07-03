@@ -13,6 +13,93 @@ interface Env {
 
 const router = Router()
 
+const INIT_SCHEMA = `
+CREATE TABLE IF NOT EXISTS accounts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    email TEXT NOT NULL UNIQUE,
+    api_key TEXT NOT NULL,
+    plan_type TEXT
+);
+CREATE TABLE IF NOT EXISTS campaigns (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    account_id INTEGER NOT NULL,
+    message_text TEXT,
+    status TEXT,
+    filters_json TEXT,
+    quiet_hours_json TEXT,
+    nudge_settings_json TEXT,
+    FOREIGN KEY (account_id) REFERENCES accounts(id)
+);
+CREATE TABLE IF NOT EXISTS telegram_sessions (
+    account_id INTEGER PRIMARY KEY,
+    encrypted_session_data TEXT,
+    FOREIGN KEY (account_id) REFERENCES accounts(id)
+);
+CREATE TABLE IF NOT EXISTS sent_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    account_id INTEGER NOT NULL,
+    campaign_id INTEGER NOT NULL,
+    user_phone TEXT,
+    status TEXT,
+    error_details TEXT,
+    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (account_id) REFERENCES accounts(id),
+    FOREIGN KEY (campaign_id) REFERENCES campaigns(id)
+);
+CREATE TABLE IF NOT EXISTS customer_categories (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    account_id INTEGER NOT NULL,
+    user_phone TEXT,
+    category TEXT,
+    confidence_score REAL,
+    FOREIGN KEY (account_id) REFERENCES accounts(id)
+);
+CREATE TABLE IF NOT EXISTS categories (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    account_id INTEGER NOT NULL,
+    name TEXT,
+    keywords_json TEXT,
+    description TEXT,
+    sample_chats_json TEXT,
+    FOREIGN KEY (account_id) REFERENCES accounts(id)
+);
+CREATE TABLE IF NOT EXISTS trackable_links (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    campaign_id INTEGER NOT NULL,
+    original_url TEXT,
+    tracking_code TEXT,
+    clicks INTEGER DEFAULT 0,
+    revenue REAL DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (campaign_id) REFERENCES campaigns(id)
+);
+CREATE TABLE IF NOT EXISTS campaign_analytics (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    campaign_id INTEGER NOT NULL,
+    total_sent INTEGER,
+    total_clicks INTEGER,
+    total_revenue REAL,
+    best_performing_lines TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (campaign_id) REFERENCES campaigns(id)
+);
+CREATE TABLE IF NOT EXISTS pending_sessions (
+    account_id INTEGER PRIMARY KEY,
+    phone TEXT,
+    session TEXT,
+    phone_code_hash TEXT,
+    FOREIGN KEY (account_id) REFERENCES accounts(id)
+);
+`;
+
+async function ensureSchema(db: D1Database) {
+  try {
+    await db.exec(INIT_SCHEMA);
+  } catch (err) {
+    console.error('schema init error', err);
+  }
+}
+
 // Authentication - placeholder
 router.post('/auth/login', async (request: Request) => {
   // TODO: implement JWT issuance
@@ -126,6 +213,7 @@ router.post('/session/verify', async (request: Request, env: Env) => {
 
 // Campaign creation placeholder
 router.post('/campaigns', async (request: Request) => {
+  console.log('POST /campaigns')
   // TODO: validate JWT and create campaign in D1
   return new Response(JSON.stringify({ status: 'created' }), {
     headers: { 'Content-Type': 'application/json' },
@@ -134,6 +222,7 @@ router.post('/campaigns', async (request: Request) => {
 
 // Start campaign - schedule job
 router.post('/campaigns/:id/start', async ({ params }) => {
+  console.log('POST /campaigns/:id/start', params?.id)
   // TODO: enqueue job payload to worker queue for Python API
   return new Response(JSON.stringify({ status: 'scheduled', id: params?.id }), {
     headers: { 'Content-Type': 'application/json' },
@@ -143,13 +232,15 @@ router.post('/campaigns/:id/start', async ({ params }) => {
 // List categories
 router.get('/categories', async (request: Request, env: Env) => {
   const accountId = 1
+
+  console.log('GET /categories account', accountId)
   const { results } = await env.DB.prepare(
-
     'SELECT id, name, keywords_json, description, sample_chats_json FROM categories WHERE account_id=?1'
-
   )
     .bind(accountId)
     .all<any>()
+  console.log('categories results', results)
+
   return new Response(JSON.stringify({ categories: results }), {
     headers: { 'Content-Type': 'application/json' },
   })
@@ -160,71 +251,101 @@ router.post('/categories', async (request: Request, env: Env) => {
 
   const { name, keywords, description, examples } = await request.json()
   const accountId = 1
+  console.log('POST /categories', { name, keywords, description, examples })
+
   const res = await env.DB.prepare(
     'INSERT INTO categories (account_id, name, keywords_json, description, sample_chats_json) VALUES (?1, ?2, ?3, ?4, ?5)'
   )
     .bind(accountId, name, JSON.stringify(keywords || []), description || '', JSON.stringify(examples || []))
 
     .run()
+  console.log('inserted category id', res.lastRowId)
+
   return new Response(JSON.stringify({ id: res.lastRowId }), {
     headers: { 'Content-Type': 'application/json' },
   })
 })
 
-
 // Analytics summary
 router.get('/analytics/summary', async (request: Request, env: Env) => {
   const accountId = 1
-  const totalRow = await env.DB.prepare(
-    'SELECT COUNT(*) as cnt FROM sent_logs WHERE account_id=?1'
-  )
-    .bind(accountId)
-    .first<any>()
-  const successRow = await env.DB.prepare(
-    "SELECT COUNT(*) as cnt FROM sent_logs WHERE account_id=?1 AND status='sent'"
-  )
-    .bind(accountId)
-    .first<any>()
-  const failRow = await env.DB.prepare(
-    "SELECT COUNT(*) as cnt FROM sent_logs WHERE account_id=?1 AND status!='sent'"
-  )
-    .bind(accountId)
-    .first<any>()
-  const revenueRow = await env.DB.prepare(
-    'SELECT SUM(revenue) as rev FROM trackable_links tl JOIN campaigns c ON c.id=tl.campaign_id WHERE c.account_id=?1'
-  )
-    .bind(accountId)
-    .first<any>()
-  const categoryRows = await env.DB.prepare(
-    'SELECT category, COUNT(*) as count FROM customer_categories WHERE account_id=?1 GROUP BY category'
-  )
-    .bind(accountId)
-    .all<any>()
-  const campaignRows = await env.DB.prepare(
-    'SELECT c.id, c.message_text, COALESCE(a.total_sent,0) as total_sent FROM campaigns c LEFT JOIN campaign_analytics a ON c.id=a.campaign_id WHERE c.account_id=?1'
-  )
-    .bind(accountId)
-    .all<any>()
-  const revenueDayRows = await env.DB.prepare(
-    'SELECT strftime("%Y-%m-%d", tl.created_at) as day, SUM(tl.revenue) as rev FROM trackable_links tl JOIN campaigns c ON c.id=tl.campaign_id WHERE c.account_id=?1 GROUP BY day ORDER BY day'
-  )
-    .bind(accountId)
-    .all<any>()
-  const metrics = {
-    messages_sent: totalRow?.cnt || 0,
-    successes: successRow?.cnt || 0,
-    failures: failRow?.cnt || 0,
-    revenue: revenueRow?.rev || 0,
+
+  console.log('GET /analytics/summary account', accountId)
+  try {
+    const totalRow = await env.DB.prepare(
+      'SELECT COUNT(*) as cnt FROM sent_logs WHERE account_id=?1'
+    )
+      .bind(accountId)
+      .first<any>()
+    console.log('totalRow', totalRow)
+
+    const successRow = await env.DB.prepare(
+      "SELECT COUNT(*) as cnt FROM sent_logs WHERE account_id=?1 AND status='sent'"
+    )
+      .bind(accountId)
+      .first<any>()
+    console.log('successRow', successRow)
+
+    const failRow = await env.DB.prepare(
+      "SELECT COUNT(*) as cnt FROM sent_logs WHERE account_id=?1 AND status!='sent'"
+    )
+      .bind(accountId)
+      .first<any>()
+    console.log('failRow', failRow)
+
+    const revenueRow = await env.DB.prepare(
+      'SELECT SUM(revenue) as rev FROM trackable_links tl JOIN campaigns c ON c.id=tl.campaign_id WHERE c.account_id=?1'
+    )
+      .bind(accountId)
+      .first<any>()
+    console.log('revenueRow', revenueRow)
+
+    const categoryRows = await env.DB.prepare(
+      'SELECT category, COUNT(*) as count FROM customer_categories WHERE account_id=?1 GROUP BY category'
+    )
+      .bind(accountId)
+      .all<any>()
+    console.log('categoryRows', categoryRows)
+
+    const campaignRows = await env.DB.prepare(
+      'SELECT c.id, c.message_text, COALESCE(a.total_sent,0) as total_sent FROM campaigns c LEFT JOIN campaign_analytics a ON c.id=a.campaign_id WHERE c.account_id=?1'
+    )
+      .bind(accountId)
+      .all<any>()
+    console.log('campaignRows', campaignRows)
+
+    const revenueDayRows = await env.DB.prepare(
+      'SELECT strftime("%Y-%m-%d", tl.created_at) as day, SUM(tl.revenue) as rev FROM trackable_links tl JOIN campaigns c ON c.id=tl.campaign_id WHERE c.account_id=?1 GROUP BY day ORDER BY day'
+    )
+      .bind(accountId)
+      .all<any>()
+    console.log('revenueDayRows', revenueDayRows)
+
+    const metrics = {
+      messages_sent: totalRow?.cnt || 0,
+      successes: successRow?.cnt || 0,
+      failures: failRow?.cnt || 0,
+      revenue: revenueRow?.rev || 0,
+    }
+    console.log('metrics', metrics)
+
+    return new Response(
+      JSON.stringify({
+        metrics,
+        categories: categoryRows,
+        campaigns: campaignRows,
+        revenueByDay: revenueDayRows,
+      }),
+      { headers: { 'Content-Type': 'application/json' } }
+    )
+  } catch (err) {
+    console.error('/analytics/summary error', err)
+    return new Response(JSON.stringify({ error: 'analytics failed' }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' },
+    })
   }
-  return new Response(
-    JSON.stringify({
-      metrics,
-      categories: categoryRows,
-      campaigns: campaignRows,
-      revenueByDay: revenueDayRows,
-    }),
-    { headers: { 'Content-Type': 'application/json' } }
-  )
+
 })
 
 router.get('/campaigns/:id/analytics', async ({ params }, env: Env) => {
@@ -247,7 +368,21 @@ export default {
     if (request.method === 'OPTIONS') {
       return new Response('', { status: 204, headers: corsHeaders })
     }
-    const resp = await router.handle(request, env, ctx)
+
+    await ensureSchema(env.DB)
+
+    console.log('incoming request', request.method, new URL(request.url).pathname)
+
+    let resp: Response
+    try {
+      resp = await router.handle(request, env, ctx)
+      if (!resp) {
+        resp = new Response('Not Found', { status: 404 })
+      }
+    } catch (err) {
+      console.error('router error', err)
+      resp = new Response('Internal Error', { status: 500 })
+    }
     resp.headers.set('Access-Control-Allow-Origin', '*')
     resp.headers.set('Access-Control-Allow-Headers', 'Content-Type')
     resp.headers.set('Access-Control-Allow-Methods', 'GET,POST,OPTIONS')
