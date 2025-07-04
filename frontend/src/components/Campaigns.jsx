@@ -47,28 +47,34 @@ export default function Campaigns({ accountId, sessionId, onSelectCampaign }) {
       >
         +
       </button>
-      <ul className="space-y-2">
+      <ul className="space-y-3">
         {campaigns.map(c => (
           <li
             key={c.id}
-            className="flex items-center justify-between border p-2 rounded"
+            className="flex items-center justify-between bg-white p-4 rounded shadow border"
           >
-            <span>{c.message_text.slice(0, 40)}...</span>
-            {c.status === 'running' ? (
-              <button
-                className="text-sm underline text-blue-600"
-                onClick={() => monitor(c.id)}
-              >
-                Monitor
-              </button>
-            ) : (
-              <button
-                className="text-sm underline text-green-700"
-                onClick={() => startCampaign(c.id)}
-              >
-                Run
-              </button>
-            )}
+            <div>
+              <p className="font-medium">Campaign #{c.id}</p>
+              <p className="text-sm text-gray-600">{c.message_text.slice(0, 60)}...</p>
+            </div>
+            <div className="flex items-center gap-4">
+              <span className={`text-xs px-2 py-1 rounded ${c.status === 'running' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'}`}>{c.status}</span>
+              {c.status === 'running' ? (
+                <button
+                  className="text-sm underline text-blue-600"
+                  onClick={() => monitor(c.id)}
+                >
+                  Monitor
+                </button>
+              ) : (
+                <button
+                  className="text-sm underline text-green-700"
+                  onClick={() => startCampaign(c.id)}
+                >
+                  Run
+                </button>
+              )}
+            </div>
           </li>
         ))}
       </ul>
