@@ -4,14 +4,19 @@ from telethon.sessions import StringSession
 from telethon.errors import SessionPasswordNeededError
 import asyncio
 import os
+import json
+from datetime import datetime
 
 app = Flask(__name__)
-TELEGRAM_API_ID = 27418503
-TELEGRAM_API_HASH = "911f278e674b5aaa7a4ecf14a49ea4d7"
-SESSION_FILE = os.path.join(os.path.dirname(__file__), "me.session")
 
-# In-memory store of logs per campaign
+# Global variables
+TELEGRAM_API_ID = os.environ.get('TELEGRAM_API_ID')
+TELEGRAM_API_HASH = os.environ.get('TELEGRAM_API_HASH')
+SESSION_FILE = 'me.session'
+
+# Enhanced campaign logging with timestamps and detailed information
 CAMPAIGN_LOGS = {}
+CAMPAIGN_STATUS = {}  # Track campaign status
 
 @app.after_request
 def add_cors_headers(response):
@@ -39,6 +44,21 @@ def get_telegram_client(session_str=None):
         print("[DEBUG] Creating new StringSession.")
         return TelegramClient(StringSession(), TELEGRAM_API_ID, TELEGRAM_API_HASH)
 
+def log_campaign_event(campaign_id, event_type, details):
+    """Enhanced logging function with timestamps and structured data."""
+    timestamp = datetime.now().isoformat()
+    log_entry = {
+        'timestamp': timestamp,
+        'type': event_type,
+        'details': details
+    }
+    
+    if campaign_id not in CAMPAIGN_LOGS:
+        CAMPAIGN_LOGS[campaign_id] = []
+    
+    CAMPAIGN_LOGS[campaign_id].append(log_entry)
+    print(f"[CAMPAIGN {campaign_id}] {timestamp} - {event_type}: {details}")
+
 @app.route('/health', methods=['GET'])
 def health():
     """Simple health check endpoint."""
@@ -46,7 +66,7 @@ def health():
 
 @app.route('/execute_campaign', methods=['POST'])
 def execute_campaign():
-    """Send a text message to a list of recipient phones sequentially."""
+    """Send a text message to a list of recipient phones sequentially with enhanced logging."""
     payload = request.get_json(force=True)
     session_str = payload.get('session')
     message = payload.get('message')
@@ -59,34 +79,168 @@ def execute_campaign():
     if campaign_id is None:
         return jsonify({'error': 'campaign_id required'}), 400
 
+    # Initialize campaign logging
+    log_campaign_event(campaign_id, 'campaign_started', {
+        'account_id': account_id,
+        'total_recipients': len(recipients),
+        'message_preview': message[:100] + '...' if len(message) > 100 else message,
+        'session_preview': session_str[:20] + '...' if session_str else 'None'
+    })
+    
+    CAMPAIGN_STATUS[campaign_id] = {
+        'status': 'running',
+        'started_at': datetime.now().isoformat(),
+        'total_recipients': len(recipients),
+        'sent_count': 0,
+        'failed_count': 0,
+        'current_recipient': None
+    }
+
     async def _send():
         client = get_telegram_client(session_str)
-        await client.connect()
-        results = []
-        for phone in recipients:
+        
+        try:
+            log_campaign_event(campaign_id, 'client_connecting', {'session_preview': session_str[:20] + '...'})
+            await client.connect()
+            log_campaign_event(campaign_id, 'client_connected', {'connected': True})
+            
+            # Get sender info for logging
             try:
+                me = await client.get_me()
+                sender_info = f"{me.first_name or ''} {me.last_name or ''} (@{me.username or 'no_username'})"
+                log_campaign_event(campaign_id, 'sender_info', {'sender': sender_info, 'phone': me.phone})
+            except Exception as e:
+                log_campaign_event(campaign_id, 'sender_info_error', {'error': str(e)})
+                sender_info = "Unknown"
+            
+        except Exception as e:
+            log_campaign_event(campaign_id, 'client_connection_failed', {'error': str(e)})
+            CAMPAIGN_STATUS[campaign_id]['status'] = 'failed'
+            CAMPAIGN_STATUS[campaign_id]['error'] = str(e)
+            return []
+        
+        results = []
+        for i, phone in enumerate(recipients):
+            try:
+                CAMPAIGN_STATUS[campaign_id]['current_recipient'] = phone
+                CAMPAIGN_STATUS[campaign_id]['progress'] = f"{i+1}/{len(recipients)}"
+                
+                log_campaign_event(campaign_id, 'sending_message', {
+                    'recipient': phone,
+                    'progress': f"{i+1}/{len(recipients)}",
+                    'message_preview': message[:50] + '...' if len(message) > 50 else message
+                })
+                
+                # Try to get recipient info if possible
+                try:
+                    entity = await client.get_entity(phone)
+                    recipient_info = f"{getattr(entity, 'first_name', '')} {getattr(entity, 'last_name', '')}"
+                    log_campaign_event(campaign_id, 'recipient_info', {
+                        'phone': phone,
+                        'name': recipient_info.strip() or 'Unknown'
+                    })
+                except:
+                    log_campaign_event(campaign_id, 'recipient_info', {
+                        'phone': phone,
+                        'name': 'Unknown (not in contacts)'
+                    })
+                
                 await client.send_message(phone, message)
-                results.append({'phone': phone, 'status': 'sent'})
-                CAMPAIGN_LOGS.setdefault(campaign_id, []).append({'phone': phone, 'status': 'sent'})
+                
+                CAMPAIGN_STATUS[campaign_id]['sent_count'] += 1
+                log_campaign_event(campaign_id, 'message_sent', {
+                    'recipient': phone,
+                    'success': True
+                })
+                
+                results.append({'phone': phone, 'status': 'sent', 'timestamp': datetime.now().isoformat()})
+                
+                # Rate limiting
                 await asyncio.sleep(1)
+                
             except errors.FloodWaitError as e:
+                log_campaign_event(campaign_id, 'flood_wait', {
+                    'recipient': phone,
+                    'wait_seconds': e.seconds,
+                    'error': str(e)
+                })
+                
                 await asyncio.sleep(e.seconds + 1)
+                
                 try:
                     await client.send_message(phone, message)
-                    results.append({'phone': phone, 'status': 'sent'})
-                    CAMPAIGN_LOGS.setdefault(campaign_id, []).append({'phone': phone, 'status': 'sent'})
+                    CAMPAIGN_STATUS[campaign_id]['sent_count'] += 1
+                    log_campaign_event(campaign_id, 'message_sent_after_flood_wait', {
+                        'recipient': phone,
+                        'success': True
+                    })
+                    results.append({'phone': phone, 'status': 'sent', 'timestamp': datetime.now().isoformat()})
                 except Exception as err:
-                    results.append({'phone': phone, 'status': 'failed', 'error': str(err)})
-                    CAMPAIGN_LOGS.setdefault(campaign_id, []).append({'phone': phone, 'status': 'failed', 'error': str(err)})
+                    CAMPAIGN_STATUS[campaign_id]['failed_count'] += 1
+                    log_campaign_event(campaign_id, 'message_failed_after_flood_wait', {
+                        'recipient': phone,
+                        'error': str(err)
+                    })
+                    results.append({'phone': phone, 'status': 'failed', 'error': str(err), 'timestamp': datetime.now().isoformat()})
+                    
+            except errors.UserPrivacyRestrictedError as e:
+                CAMPAIGN_STATUS[campaign_id]['failed_count'] += 1
+                log_campaign_event(campaign_id, 'privacy_restricted', {
+                    'recipient': phone,
+                    'error': 'User privacy settings prevent sending messages'
+                })
+                results.append({'phone': phone, 'status': 'failed', 'error': 'Privacy restricted', 'timestamp': datetime.now().isoformat()})
+                
+            except errors.UserNotParticipantError as e:
+                CAMPAIGN_STATUS[campaign_id]['failed_count'] += 1
+                log_campaign_event(campaign_id, 'user_not_participant', {
+                    'recipient': phone,
+                    'error': 'User is not a participant in the chat'
+                })
+                results.append({'phone': phone, 'status': 'failed', 'error': 'Not participant', 'timestamp': datetime.now().isoformat()})
+                
+            except errors.UserDeactivatedBanError as e:
+                CAMPAIGN_STATUS[campaign_id]['failed_count'] += 1
+                log_campaign_event(campaign_id, 'user_deactivated', {
+                    'recipient': phone,
+                    'error': 'User account is deactivated'
+                })
+                results.append({'phone': phone, 'status': 'failed', 'error': 'User deactivated', 'timestamp': datetime.now().isoformat()})
+                
             except Exception as err:
-                results.append({'phone': phone, 'status': 'failed', 'error': str(err)})
-                CAMPAIGN_LOGS.setdefault(campaign_id, []).append({'phone': phone, 'status': 'failed', 'error': str(err)})
-        await client.disconnect()
+                CAMPAIGN_STATUS[campaign_id]['failed_count'] += 1
+                log_campaign_event(campaign_id, 'message_failed', {
+                    'recipient': phone,
+                    'error': str(err),
+                    'error_type': type(err).__name__
+                })
+                results.append({'phone': phone, 'status': 'failed', 'error': str(err), 'timestamp': datetime.now().isoformat()})
+        
+        try:
+            await client.disconnect()
+            log_campaign_event(campaign_id, 'client_disconnected', {'disconnected': True})
+        except Exception as e:
+            log_campaign_event(campaign_id, 'client_disconnect_error', {'error': str(e)})
+        
+        # Update final status
+        CAMPAIGN_STATUS[campaign_id]['status'] = 'completed'
+        CAMPAIGN_STATUS[campaign_id]['completed_at'] = datetime.now().isoformat()
+        CAMPAIGN_STATUS[campaign_id]['current_recipient'] = None
+        
+        log_campaign_event(campaign_id, 'campaign_completed', {
+            'total_sent': CAMPAIGN_STATUS[campaign_id]['sent_count'],
+            'total_failed': CAMPAIGN_STATUS[campaign_id]['failed_count'],
+            'success_rate': f"{(CAMPAIGN_STATUS[campaign_id]['sent_count'] / len(recipients) * 100):.1f}%"
+        })
+        
         return results
 
     try:
         results = asyncio.run(_send())
     except Exception as e:
+        log_campaign_event(campaign_id, 'campaign_error', {'error': str(e)})
+        CAMPAIGN_STATUS[campaign_id]['status'] = 'failed'
+        CAMPAIGN_STATUS[campaign_id]['error'] = str(e)
         print('[ERROR] execute_campaign', e)
         return jsonify({'error': str(e)}), 500
 
@@ -209,14 +363,74 @@ def classify_text():
 
 @app.route('/campaign_logs/<int:campaign_id>', methods=['GET'])
 def get_campaign_logs(campaign_id):
-    """Return stored logs for a campaign."""
+    """Return stored logs for a campaign with enhanced structure."""
     logs = CAMPAIGN_LOGS.get(campaign_id, [])
-    return jsonify({'logs': logs})
+    status = CAMPAIGN_STATUS.get(campaign_id, {})
+    
+    # Convert logs to the format expected by the frontend
+    formatted_logs = []
+    for log in logs:
+        if log['type'] in ['message_sent', 'message_failed', 'message_sent_after_flood_wait', 'message_failed_after_flood_wait']:
+            formatted_logs.append({
+                'phone': log['details'].get('recipient', 'Unknown'),
+                'status': 'sent' if 'sent' in log['type'] else 'failed',
+                'error': log['details'].get('error'),
+                'timestamp': log['timestamp']
+            })
+    
+    return jsonify({
+        'logs': formatted_logs,
+        'status': status,
+        'total_logs': len(logs),
+        'formatted_logs': len(formatted_logs)
+    })
+
+@app.route('/campaign_status/<int:campaign_id>', methods=['GET'])
+def get_campaign_status(campaign_id):
+    """Return detailed campaign status and progress."""
+    status = CAMPAIGN_STATUS.get(campaign_id, {})
+    logs = CAMPAIGN_LOGS.get(campaign_id, [])
+    
+    # Calculate progress
+    total_recipients = status.get('total_recipients', 0)
+    sent_count = status.get('sent_count', 0)
+    failed_count = status.get('failed_count', 0)
+    
+    if total_recipients > 0:
+        progress_percent = ((sent_count + failed_count) / total_recipients) * 100
+    else:
+        progress_percent = 0
+    
+    # Get recent activity
+    recent_logs = logs[-10:] if logs else []
+    
+    return jsonify({
+        'campaign_id': campaign_id,
+        'status': status.get('status', 'unknown'),
+        'progress_percent': round(progress_percent, 1),
+        'total_recipients': total_recipients,
+        'sent_count': sent_count,
+        'failed_count': failed_count,
+        'current_recipient': status.get('current_recipient'),
+        'started_at': status.get('started_at'),
+        'completed_at': status.get('completed_at'),
+        'error': status.get('error'),
+        'recent_activity': recent_logs
+    })
 
 @app.route('/stop_campaign/<int:campaign_id>', methods=['POST'])
 def stop_campaign(campaign_id):
     print(f"[DEBUG] Stopping campaign {campaign_id}")
-    # TODO: Implement actual stop logic if needed
+    
+    if campaign_id in CAMPAIGN_STATUS:
+        CAMPAIGN_STATUS[campaign_id]['status'] = 'stopped'
+        CAMPAIGN_STATUS[campaign_id]['stopped_at'] = datetime.now().isoformat()
+        log_campaign_event(campaign_id, 'campaign_stopped', {
+            'stopped_by': 'user_request',
+            'final_sent': CAMPAIGN_STATUS[campaign_id].get('sent_count', 0),
+            'final_failed': CAMPAIGN_STATUS[campaign_id].get('failed_count', 0)
+        })
+    
     return jsonify({"status": "stopped", "campaign_id": campaign_id})
 
 if __name__ == '__main__':

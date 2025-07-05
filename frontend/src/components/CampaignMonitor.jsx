@@ -10,11 +10,112 @@ export default function CampaignMonitor({ accountId, campaignId, onSelectCampaig
   const [logs, setLogs] = useState([])
   const [running, setRunning] = useState([])
   const [activeId, setActiveId] = useState(campaignId || null)
+  const [campaignStatus, setCampaignStatus] = useState({})
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState(null)
 
+  const stopCampaign = async (id) => {
+    setLoading(true)
+    try {
+      const response = await fetch(`${API_BASE}/campaigns/${id}/stop`, { 
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      })
+      const data = await response.json()
+      console.log('Stop campaign response:', data)
+      if (response.ok) {
+        // Refresh the running campaigns list
+        fetchRunningCampaigns()
+      } else {
+        setError(`Failed to stop campaign: ${data.error || 'Unknown error'}`)
+      }
+    } catch (e) {
+      console.error('stop campaign error:', e)
+      setError(`Failed to stop campaign: ${e.message}`)
+    } finally {
+      setLoading(false)
+    }
+  }
 
-  const stopCampaign = id => {
-    fetch(`${API_BASE}/campaigns/${id}/stop`, { method: 'POST' })
-      .catch(e => console.error('stop campaign', e))
+  const fetchRunningCampaigns = async () => {
+    try {
+      const response = await fetch(`${API_BASE}/campaigns?account_id=${accountId}`)
+      const data = await response.json()
+      console.log('Running campaigns data:', data)
+      
+      if (response.ok) {
+        const runningCampaigns = (data.campaigns || []).filter(c => 
+          c.status === 'running' || c.status === 'created'
+        )
+        setRunning(runningCampaigns)
+        
+        // If no active campaign is selected and there are running campaigns, select the first one
+        if (!activeId && runningCampaigns.length > 0) {
+          setActiveId(runningCampaigns[0].id)
+          onSelectCampaign && onSelectCampaign(runningCampaigns[0].id)
+        }
+      } else {
+        setError(`Failed to fetch campaigns: ${data.error || 'Unknown error'}`)
+      }
+    } catch (e) {
+      console.error('fetch running campaigns error:', e)
+      setError(`Failed to fetch campaigns: ${e.message}`)
+    }
+  }
+
+  const fetchCampaignStatus = async (campaignId) => {
+    try {
+      const response = await fetch(`${API_BASE}/campaigns/${campaignId}/status`)
+      const data = await response.json()
+      console.log('Campaign status data:', data)
+      
+      if (response.ok) {
+        setCampaignStatus(data)
+        setProgress(data.progress_percent || 0)
+        
+        // Update errors from status
+        if (data.failed_count > 0) {
+          setErrors([`${data.failed_count} messages failed to send`])
+        } else {
+          setErrors([])
+        }
+      } else {
+        console.error('Failed to fetch campaign status:', data.error)
+      }
+    } catch (e) {
+      console.error('fetch campaign status error:', e)
+    }
+  }
+
+  const fetchCampaignLogs = async (campaignId) => {
+    try {
+      const response = await fetch(`${API_BASE}/campaigns/${campaignId}/logs`)
+      const data = await response.json()
+      console.log('Campaign logs data:', data)
+      
+      if (response.ok) {
+        const formattedLogs = data.logs || []
+        setLogs(formattedLogs)
+        
+        // Calculate progress from logs if status endpoint fails
+        if (formattedLogs.length > 0) {
+          const sent = formattedLogs.filter(l => l.status === 'sent').length
+          const total = formattedLogs.length
+          if (total > 0) {
+            setProgress(Math.round((sent / total) * 100))
+          }
+        }
+        
+        // Update errors from logs
+        const failedLogs = formattedLogs.filter(l => l.status !== 'sent')
+        const errorMessages = failedLogs.map(l => `${l.phone}: ${l.error || 'failed'}`)
+        setErrors(errorMessages)
+      } else {
+        console.error('Failed to fetch campaign logs:', data.error)
+      }
+    } catch (e) {
+      console.error('fetch campaign logs error:', e)
+    }
   }
 
   useEffect(() => {
@@ -22,47 +123,54 @@ export default function CampaignMonitor({ accountId, campaignId, onSelectCampaig
   }, [campaignId])
 
   useEffect(() => {
-
     if (!accountId) return
-    const fetchRunning = () => {
-      fetch(`${API_BASE}/campaigns?account_id=${accountId}`)
-        .then(r => r.json())
-        .then(d => {
-          const arr = (d.campaigns || []).filter(c => c.status === 'running')
-          setRunning(arr)
-        })
-        .catch(e => console.error('fetch running campaigns', e))
-    }
-    fetchRunning()
-    const id = setInterval(fetchRunning, 5000)
-    return () => clearInterval(id)
+    
+    fetchRunningCampaigns()
+    const interval = setInterval(fetchRunningCampaigns, 5000)
+    return () => clearInterval(interval)
   }, [accountId])
 
   useEffect(() => {
     if (!activeId) return
-    const fetchLogs = () => {
-      fetch(`${API_BASE}/campaigns/${activeId}/logs`)
-        .then(r => r.json())
-        .then(d => {
-          const arr = d.logs || []
-          setLogs(arr)
-          const sent = arr.filter(l => l.status === 'sent').length
-          const total = arr.length
-          if (total > 0) setProgress(Math.round((sent / total) * 100))
-          const errs = arr.filter(l => l.status !== 'sent').map(l => `${l.phone}: ${l.error || 'failed'}`)
-          setErrors(errs)
-        })
-        .catch(e => console.error('log fetch error', e))
+    
+    // Fetch initial data
+    fetchCampaignStatus(activeId)
+    fetchCampaignLogs(activeId)
+    
+    // Set up polling
+    const statusInterval = setInterval(() => fetchCampaignStatus(activeId), 2000)
+    const logsInterval = setInterval(() => fetchCampaignLogs(activeId), 3000)
+    
+    return () => {
+      clearInterval(statusInterval)
+      clearInterval(logsInterval)
     }
-    fetchLogs()
-    const id = setInterval(fetchLogs, 2000)
-    return () => clearInterval(id)
   }, [activeId])
 
-  return (
+  const formatTimestamp = (timestamp) => {
+    if (!timestamp) return ''
+    try {
+      return new Date(timestamp).toLocaleTimeString()
+    } catch (e) {
+      return timestamp
+    }
+  }
 
+  return (
     <div className="p-4 space-y-4">
       <h2 className="text-2xl mb-2 font-semibold">Campaign Monitor</h2>
+      
+      {error && (
+        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
+          <strong>Error:</strong> {error}
+          <button 
+            onClick={() => setError(null)}
+            className="float-right font-bold"
+          >
+            ×
+          </button>
+        </div>
+      )}
 
       <div>
         <h3 className="font-medium mb-1">Running Campaigns</h3>
@@ -79,8 +187,23 @@ export default function CampaignMonitor({ accountId, campaignId, onSelectCampaig
                 }}
                 className={`cursor-pointer p-2 border rounded ${c.id === activeId ? 'bg-blue-50 border-blue-300' : 'hover:bg-gray-50'}`}
               >
-                <p className="text-sm font-medium">#{c.id}</p>
-                <p className="text-xs text-gray-600">{c.message_text.slice(0, 60)}...</p>
+                <div className="flex justify-between items-start">
+                  <div>
+                    <p className="text-sm font-medium">Campaign #{c.id}</p>
+                    <p className="text-xs text-gray-600">{c.message_text?.slice(0, 60)}...</p>
+                    <p className="text-xs text-gray-500">Status: {c.status}</p>
+                  </div>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      stopCampaign(c.id)
+                    }}
+                    disabled={loading}
+                    className="ml-2 px-2 py-1 text-xs bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-50"
+                  >
+                    {loading ? 'Stopping...' : 'Stop'}
+                  </button>
+                </div>
               </li>
             ))}
           </ul>
@@ -94,21 +217,36 @@ export default function CampaignMonitor({ accountId, campaignId, onSelectCampaig
               <h3 className="font-medium mb-1">Live Sending Status</h3>
               <div className="w-full bg-gray-200 h-4 rounded overflow-hidden">
                 <div
-                  className="bg-green-500 h-full transition-all"
+                  className="bg-green-500 h-full transition-all duration-500"
                   style={{ width: `${progress}%` }}
                 />
               </div>
 
               <div className="flex items-center justify-between mt-1">
                 <p className="text-sm">{progress}% complete</p>
-                <button
-                  className="ml-2 px-2 py-1 text-sm bg-red-600 text-white rounded"
-                  onClick={() => stopCampaign(activeId)}
-                >
-                  Stop
-                </button>
+                <div className="text-xs text-gray-500">
+                  {campaignStatus.sent_count || 0} sent, {campaignStatus.failed_count || 0} failed
+                </div>
               </div>
 
+              {campaignStatus.current_recipient && (
+                <p className="text-xs text-blue-600 mt-1">
+                  Currently sending to: {campaignStatus.current_recipient}
+                </p>
+              )}
+            </div>
+
+            <div>
+              <h3 className="font-medium mb-1">Campaign Details</h3>
+              <div className="text-sm space-y-1">
+                <p><strong>Status:</strong> {campaignStatus.status || 'Unknown'}</p>
+                <p><strong>Started:</strong> {formatTimestamp(campaignStatus.started_at)}</p>
+                {campaignStatus.completed_at && (
+                  <p><strong>Completed:</strong> {formatTimestamp(campaignStatus.completed_at)}</p>
+                )}
+                <p><strong>Total Recipients:</strong> {campaignStatus.total_recipients || 0}</p>
+                <p><strong>Success Rate:</strong> {campaignStatus.success_rate || '0%'}</p>
+              </div>
             </div>
 
             <div>
@@ -124,44 +262,28 @@ export default function CampaignMonitor({ accountId, campaignId, onSelectCampaig
               )}
             </div>
 
-            <div className="flex items-center space-x-2">
-              <h3 className="font-medium">Quiet Hours:</h3>
-              <span className="px-2 py-1 bg-yellow-200 text-yellow-800 rounded text-sm">
-                Off
-              </span>
-            </div>
-
-            <div className="flex items-center space-x-2">
-              <h3 className="font-medium">Nudge Status:</h3>
-              <span className="px-2 py-1 bg-blue-200 text-blue-800 rounded text-sm">
-                Waiting
-              </span>
-            </div>
-
-            <div className="text-sm">
-              <h3 className="font-medium">Revenue Generated</h3>
-              <p>$123.45</p>
-            </div>
-
             <div>
               <h3 className="font-medium mb-1">Live Logs</h3>
               {logs.length === 0 ? (
                 <p className="text-sm text-gray-500">No logs yet</p>
               ) : (
-                <ul className="text-sm list-disc list-inside space-y-1">
-                  {logs.map((l, i) => (
-                    <li key={i}>
-                      {l.phone}: {l.status}
-                      {l.error && ` - ${l.error}`}
-                    </li>
-                  ))}
-                </ul>
+                <div className="max-h-40 overflow-y-auto">
+                  <ul className="text-sm space-y-1">
+                    {logs.slice(-10).reverse().map((l, i) => (
+                      <li key={i} className={`p-1 rounded ${l.status === 'sent' ? 'bg-green-50' : 'bg-red-50'}`}>
+                        <span className="text-xs text-gray-500">{formatTimestamp(l.timestamp)}</span>
+                        <br />
+                        <span className="font-mono">{l.phone}</span>: {l.status}
+                        {l.error && <span className="text-red-600"> - {l.error}</span>}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
               )}
             </div>
           </div>
         </div>
       )}
-
     </div>
   )
 }
