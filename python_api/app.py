@@ -5,7 +5,9 @@ from telethon.errors import SessionPasswordNeededError
 import asyncio
 import os
 import logging
-from typing import Dict, List
+import threading
+from typing import Dict, List, Any
+from datetime import datetime
 
 app = Flask(__name__)
 
@@ -39,6 +41,8 @@ print('Starting Python API with API_ID', API_ID)
 # simple in-memory stores for logs and stop flags
 CAMPAIGN_LOGS: Dict[int, List[dict]] = {}
 STOP_FLAGS: Dict[int, bool] = {}
+CAMPAIGN_STATUS: Dict[int, Dict[str, Any]] = {}
+CAMPAIGN_THREADS: Dict[int, threading.Thread] = {}
 
 
 def get_telegram_client(session_str: str):
@@ -75,11 +79,19 @@ def execute_campaign():
     print('session snippet', session_str[:10] if session_str else None)
     print('recipients count', len(recipients))
 
-    if not session_str or not message or not recipients:
+    if not session_str or not message:
         return jsonify({'error': 'missing parameters'}), 400
 
     CAMPAIGN_LOGS[campaign_id] = []
     STOP_FLAGS[campaign_id] = False
+    CAMPAIGN_STATUS[campaign_id] = {
+        'status': 'running',
+        'started_at': datetime.utcnow().isoformat(),
+        'sent_count': 0,
+        'failed_count': 0,
+        'total_recipients': len(recipients),
+        'current_recipient': None
+    }
     print('STOP_FLAGS set to False for', campaign_id)
 
     async def _send():
@@ -89,36 +101,44 @@ def execute_campaign():
         for phone in recipients:
             if STOP_FLAGS.get(campaign_id):
                 logger.info('Campaign %s stop requested', campaign_id)
-                print('Stop flag detected for', campaign_id)
                 CAMPAIGN_LOGS[campaign_id].append({'status': 'stopped'})
+                CAMPAIGN_STATUS[campaign_id]['status'] = 'stopped'
                 break
             try:
                 await client.send_message(phone, message)
                 logger.info('sent to %s', phone)
-                print('message sent to', phone)
                 entry = {'phone': phone, 'status': 'sent'}
                 results.append(entry)
                 CAMPAIGN_LOGS[campaign_id].append(entry)
+                CAMPAIGN_STATUS[campaign_id]['sent_count'] += 1
+                CAMPAIGN_STATUS[campaign_id]['current_recipient'] = phone
                 await asyncio.sleep(1)
             except Exception as e:
                 logger.error('send error %s %s', phone, e)
-                print('send error', phone, e)
                 entry = {'phone': phone, 'status': 'failed', 'error': str(e)}
                 results.append(entry)
                 CAMPAIGN_LOGS[campaign_id].append(entry)
+                CAMPAIGN_STATUS[campaign_id]['failed_count'] += 1
+                CAMPAIGN_STATUS[campaign_id]['current_recipient'] = phone
         await client.disconnect()
+        CAMPAIGN_STATUS[campaign_id]['status'] = 'completed'
+        CAMPAIGN_STATUS[campaign_id]['completed_at'] = datetime.utcnow().isoformat()
+        CAMPAIGN_STATUS[campaign_id]['current_recipient'] = None
+        logger.info('campaign %s completed with %d results', campaign_id, len(results))
         return results
 
-    try:
-        results = asyncio.run(_send())
-    except Exception as e:
-        logger.error('execute_campaign error %s', e)
-        print('execute_campaign failed', e)
-        return jsonify({'error': str(e)}), 500
+    def _run_async():
+        try:
+            asyncio.run(_send())
+        except Exception as e:
+            logger.error('execute_campaign background error %s', e)
 
-    logger.info('campaign %s completed with %d results', campaign_id, len(results))
-    print('campaign', campaign_id, 'completed, results', len(results))
-    return jsonify({'status': 'completed', 'results': results})
+    thread = threading.Thread(target=_run_async, daemon=True)
+    CAMPAIGN_THREADS[campaign_id] = thread
+    thread.start()
+
+    logger.info('campaign %s started in background', campaign_id)
+    return jsonify({'status': 'started'})
 
 
 @app.route('/stop_campaign/<int:cid>', methods=['POST'])
@@ -132,6 +152,9 @@ def stop_campaign(cid: int):
     STOP_FLAGS[cid] = True
     print('STOP_FLAGS set to True for', cid)
     CAMPAIGN_LOGS.setdefault(cid, []).append({'status': 'stop_requested'})
+    if cid in CAMPAIGN_STATUS:
+        CAMPAIGN_STATUS[cid]['status'] = 'stopped'
+        CAMPAIGN_STATUS[cid]['completed_at'] = datetime.utcnow().isoformat()
     return jsonify({'status': 'stopping'})
 
 
@@ -140,6 +163,30 @@ def campaign_logs(cid: int):
     """Return in-memory logs for a campaign."""
     logger.info('campaign_logs %s', cid)
     return jsonify({'logs': CAMPAIGN_LOGS.get(cid, [])})
+
+
+@app.route('/campaign_status/<int:cid>', methods=['GET'])
+def campaign_status(cid: int):
+    """Return progress and status information for a campaign."""
+    status = CAMPAIGN_STATUS.get(cid, {})
+    sent = status.get('sent_count', 0)
+    failed = status.get('failed_count', 0)
+    total = status.get('total_recipients', sent + failed)
+    if total:
+        progress = ((sent + failed) / total) * 100
+    else:
+        progress = 0
+    return jsonify({
+        'campaign_id': cid,
+        'status': status.get('status', 'unknown'),
+        'sent_count': sent,
+        'failed_count': failed,
+        'total_recipients': total,
+        'progress_percent': round(progress, 1),
+        'started_at': status.get('started_at'),
+        'completed_at': status.get('completed_at'),
+        'current_recipient': status.get('current_recipient')
+    })
 
 
 @app.route('/session/connect', methods=['POST'])

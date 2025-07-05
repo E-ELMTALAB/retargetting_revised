@@ -6,6 +6,7 @@ import asyncio
 import os
 import json
 from datetime import datetime
+import threading
 
 app = Flask(__name__)
 
@@ -24,6 +25,8 @@ if not TELEGRAM_API_ID or not TELEGRAM_API_HASH:
 # Enhanced campaign logging with timestamps and detailed information
 CAMPAIGN_LOGS = {}
 CAMPAIGN_STATUS = {}  # Track campaign status
+STOP_FLAGS = {}
+CAMPAIGN_THREADS = {}
 
 @app.after_request
 def add_cors_headers(response):
@@ -135,7 +138,7 @@ def execute_campaign():
         'message_preview': message[:100] + '...' if len(message) > 100 else message,
         'session_preview': session_str[:20] + '...' if session_str else 'None'
     })
-    
+
     CAMPAIGN_STATUS[campaign_id] = {
         'status': 'running',
         'started_at': datetime.now().isoformat(),
@@ -144,6 +147,7 @@ def execute_campaign():
         'failed_count': 0,
         'current_recipient': None
     }
+    STOP_FLAGS[campaign_id] = False
 
     async def _send():
         print(f"[DEBUG] Starting _send function for campaign {campaign_id}")
@@ -177,11 +181,18 @@ def execute_campaign():
         results = []
         total_dialogs = 0
         processed_dialogs = 0
+        stopped = False
         
         print(f"[DEBUG] Starting to iterate through dialogs for campaign {campaign_id}")
         
         # Iterate through all dialogs (chats) that the user has
         async for dialog in client.iter_dialogs():
+            if STOP_FLAGS.get(campaign_id):
+                log_campaign_event(campaign_id, 'stop_requested', {})
+                stopped = True
+                CAMPAIGN_STATUS[campaign_id]['status'] = 'stopped'
+                CAMPAIGN_STATUS[campaign_id]['completed_at'] = datetime.now().isoformat()
+                break
             try:
                 # Skip non-user dialogs (groups, channels, etc.)
                 if not dialog.is_user:
@@ -340,7 +351,8 @@ def execute_campaign():
             print(f"[ERROR] Error disconnecting from Telegram for campaign {campaign_id}: {e}")
         
         # Update final status
-        CAMPAIGN_STATUS[campaign_id]['status'] = 'completed'
+        if not stopped and CAMPAIGN_STATUS[campaign_id].get('status') != 'stopped':
+            CAMPAIGN_STATUS[campaign_id]['status'] = 'completed'
         CAMPAIGN_STATUS[campaign_id]['completed_at'] = datetime.now().isoformat()
         CAMPAIGN_STATUS[campaign_id]['current_recipient'] = None
         
@@ -355,28 +367,20 @@ def execute_campaign():
         
         return results
 
-    try:
-        print(f"[DEBUG] Starting asyncio.run for campaign {campaign_id}")
-        results = asyncio.run(_send())
-        print(f"[DEBUG] asyncio.run completed for campaign {campaign_id}, results: {results}")
-    except ValueError as e:
-        if "API credentials" in str(e) or "API ID or Hash" in str(e):
-            log_campaign_event(campaign_id, 'credential_error', {'error': str(e)})
+    def _run_async():
+        try:
+            asyncio.run(_send())
+        except Exception as e:
+            log_campaign_event(campaign_id, 'background_error', {'error': str(e)})
             CAMPAIGN_STATUS[campaign_id]['status'] = 'failed'
-            CAMPAIGN_STATUS[campaign_id]['error'] = f"API Credential Error: {str(e)}"
-            print(f'[ERROR] API credential error for campaign {campaign_id}: {e}')
-            return jsonify({'error': f'API Credential Error: {str(e)}'}), 500
-        else:
-            raise
-    except Exception as e:
-        log_campaign_event(campaign_id, 'campaign_error', {'error': str(e)})
-        CAMPAIGN_STATUS[campaign_id]['status'] = 'failed'
-        CAMPAIGN_STATUS[campaign_id]['error'] = str(e)
-        print(f'[ERROR] execute_campaign failed for campaign {campaign_id}: {e}')
-        return jsonify({'error': str(e)}), 500
+            CAMPAIGN_STATUS[campaign_id]['error'] = str(e)
 
-    print(f"[DEBUG] Returning success response for campaign {campaign_id}")
-    return jsonify({'status': 'completed', 'results': results})
+    thread = threading.Thread(target=_run_async, daemon=True)
+    CAMPAIGN_THREADS[campaign_id] = thread
+    thread.start()
+
+    print(f"[DEBUG] Campaign {campaign_id} started in background thread")
+    return jsonify({'status': 'started'})
 
 
 @app.route('/session/connect', methods=['POST'])
@@ -562,6 +566,8 @@ def stop_campaign(campaign_id):
             'final_sent': CAMPAIGN_STATUS[campaign_id].get('sent_count', 0),
             'final_failed': CAMPAIGN_STATUS[campaign_id].get('failed_count', 0)
         })
+
+    STOP_FLAGS[campaign_id] = True
     
     return jsonify({"status": "stopped", "campaign_id": campaign_id})
 
