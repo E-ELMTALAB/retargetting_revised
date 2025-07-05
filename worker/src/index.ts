@@ -363,6 +363,7 @@ router.get('/campaigns', async (request: Request, env: Env) => {
 router.post('/campaigns/:id/start', async ({ params }, env: Env) => {
   const id = Number(params?.id || 0)
   console.log('POST /campaigns/:id/start', id)
+  console.log('Fetching campaign details for', id)
   if (!id) return jsonResponse({ error: 'invalid id' }, 400)
 
   const row = await env.DB.prepare(
@@ -378,6 +379,7 @@ router.post('/campaigns/:id/start', async ({ params }, env: Env) => {
   ).bind(row.account_id).all()
   const phoneRows = Array.isArray(phonesRes) ? phonesRes : phonesRes.results || []
   const recipients = phoneRows.map((r: any) => r.user_phone)
+  console.log('recipients count', recipients.length)
 
   let resp: Response
   try {
@@ -392,6 +394,7 @@ router.post('/campaigns/:id/start', async ({ params }, env: Env) => {
         campaign_id: row.id,
       })
     })
+    console.log('execute_campaign response status', resp.status)
   } catch (err) {
     console.error('fetch execute_campaign error', err)
     return jsonResponse({ error: 'api request failed' }, 500)
@@ -405,6 +408,7 @@ router.post('/campaigns/:id/start', async ({ params }, env: Env) => {
   await env.DB.prepare('UPDATE campaigns SET status=?1 WHERE id=?2')
     .bind('running', id)
     .run()
+  console.log('campaign', id, 'status set to running')
 
   return jsonResponse({ status: 'started', result: data })
 })
@@ -413,6 +417,7 @@ router.post('/campaigns/:id/start', async ({ params }, env: Env) => {
 router.post('/campaigns/:id/stop', async ({ params }, env: Env) => {
   const id = Number(params?.id || 0)
   console.log('POST /campaigns/:id/stop', id)
+  console.log('Sending stop request to Python API for', id)
   if (!id) return jsonResponse({ error: 'invalid id' }, 400)
 
   let resp: Response
@@ -420,6 +425,7 @@ router.post('/campaigns/:id/stop', async ({ params }, env: Env) => {
     resp = await fetch(`${env.PYTHON_API_URL}/stop_campaign/${id}`, {
       method: 'POST',
     })
+    console.log('stop_campaign response status', resp.status)
   } catch (err) {
     console.error('fetch stop_campaign error', err)
     return jsonResponse({ error: 'api request failed' }, 500)
@@ -433,6 +439,7 @@ router.post('/campaigns/:id/stop', async ({ params }, env: Env) => {
   await env.DB.prepare('UPDATE campaigns SET status=?1 WHERE id=?2')
     .bind('stopped', id)
     .run()
+  console.log('campaign', id, 'status set to stopped')
 
   return jsonResponse({ status: 'stopped', result: data })
 })
