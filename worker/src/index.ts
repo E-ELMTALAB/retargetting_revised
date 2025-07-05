@@ -374,12 +374,25 @@ router.post('/campaigns/:id/start', async ({ params }, env: Env) => {
 
   if (!row) return jsonResponse({ error: 'not found' }, 404)
 
+  // Get all possible recipients
   const phonesRes = await env.DB.prepare(
     'SELECT user_phone FROM customer_categories WHERE account_id=?1'
   ).bind(row.account_id).all()
   const phoneRows = Array.isArray(phonesRes) ? phonesRes : phonesRes.results || []
-  const recipients = phoneRows.map((r: any) => r.user_phone)
-  console.log('recipients count', recipients.length)
+  const allRecipients = phoneRows.map((r: any) => r.user_phone)
+  console.log('all recipients count', allRecipients.length)
+
+  // Get already sent recipients for this campaign
+  const sentRows = await env.DB.prepare(
+    'SELECT user_phone FROM sent_logs WHERE campaign_id=?1 AND status=?2'
+  ).bind(id, 'sent').all()
+  const sentPhones = new Set((Array.isArray(sentRows) ? sentRows : sentRows.results || []).map((r: any) => r.user_phone))
+  const recipients = allRecipients.filter((phone: string) => !sentPhones.has(phone))
+  console.log('recipients to send (unsent) count', recipients.length)
+
+  if (recipients.length === 0) {
+    return jsonResponse({ status: 'nothing to resume', message: 'All recipients have already been sent this campaign.' })
+  }
 
   let resp: Response
   try {
