@@ -367,12 +367,18 @@ router.post('/campaigns/:id/start', async ({ params }, env: Env) => {
   if (!id) return jsonResponse({ error: 'invalid id' }, 400)
 
   const row = await env.DB.prepare(
-    `SELECT c.id, c.account_id, c.message_text, t.encrypted_session_data
+    `SELECT c.id, c.account_id, c.message_text, c.telegram_session_id, t.encrypted_session_data
      FROM campaigns c JOIN telegram_sessions t ON c.telegram_session_id=t.id
      WHERE c.id=?1`
   ).bind(id).first()
 
+  console.log('Campaign row:', row)
   if (!row) return jsonResponse({ error: 'not found' }, 404)
+
+  if (!row.encrypted_session_data) {
+    console.error('No session data found for campaign', id)
+    return jsonResponse({ error: 'no session data found' }, 400)
+  }
 
   // Get all possible recipients
   const phonesRes = await env.DB.prepare(
@@ -381,6 +387,16 @@ router.post('/campaigns/:id/start', async ({ params }, env: Env) => {
   const phoneRows = Array.isArray(phonesRes) ? phonesRes : phonesRes.results || []
   const allRecipients = phoneRows.map((r: any) => r.user_phone)
   console.log('all recipients count', allRecipients.length)
+  console.log('all recipients:', allRecipients)
+
+  if (allRecipients.length === 0) {
+    console.log('No recipients found in customer_categories for account', row.account_id)
+    return jsonResponse({ 
+      error: 'no recipients found', 
+      message: 'No recipients found in customer_categories table. Please add some recipients first.',
+      account_id: row.account_id 
+    }, 400)
+  }
 
   // Get already sent recipients for this campaign
   const sentRows = await env.DB.prepare(
@@ -389,32 +405,43 @@ router.post('/campaigns/:id/start', async ({ params }, env: Env) => {
   const sentPhones = new Set((Array.isArray(sentRows) ? sentRows : sentRows.results || []).map((r: any) => r.user_phone))
   const recipients = allRecipients.filter((phone: string) => !sentPhones.has(phone))
   console.log('recipients to send (unsent) count', recipients.length)
+  console.log('recipients to send:', recipients)
 
   if (recipients.length === 0) {
     return jsonResponse({ status: 'nothing to resume', message: 'All recipients have already been sent this campaign.' })
   }
+
+  // Log the request being sent to Python API
+  const requestBody = {
+    session: row.encrypted_session_data,
+    message: row.message_text,
+    recipients,
+    account_id: row.account_id,
+    campaign_id: row.id,
+  }
+  console.log('Sending to Python API:', {
+    ...requestBody,
+    session: row.encrypted_session_data ? row.encrypted_session_data.substring(0, 50) + '...' : 'null',
+    recipients_count: recipients.length
+  })
 
   let resp: Response
   try {
     resp = await fetch(`${env.PYTHON_API_URL}/execute_campaign`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        session: row.encrypted_session_data,
-        message: row.message_text,
-        recipients,
-        account_id: row.account_id,
-        campaign_id: row.id,
-      })
+      body: JSON.stringify(requestBody)
     })
     console.log('execute_campaign response status', resp.status)
   } catch (err) {
     console.error('fetch execute_campaign error', err)
-    return jsonResponse({ error: 'api request failed' }, 500)
+    return jsonResponse({ error: 'api request failed', details: err && ((err as any).stack || (err as any).message || err.toString()) }, 500)
   }
 
   const data = await resp.json().catch(() => ({}))
+  console.log('execute_campaign response data:', data)
   if (!resp.ok) {
+    console.error('Python API returned error:', data)
     return jsonResponse({ error: 'python error', details: data }, resp.status)
   }
 
@@ -675,6 +702,104 @@ const campaignStatusHandler = async ({ params }: { params: any }, env: Env) => {
 }
 router.get('/campaigns/:id/status', campaignStatusHandler)
 router.get('/campaigns/:id/status/', campaignStatusHandler)
+
+// Debug endpoint to check recipients and add test data
+router.get('/debug/recipients', async (request: Request, env: Env) => {
+  const url = new URL(request.url)
+  const accountId = Number(url.searchParams.get('account_id') || 1)
+  
+  console.log('GET /debug/recipients for account', accountId)
+  
+  // Check existing recipients
+  const existingRecipients = await env.DB.prepare(
+    'SELECT user_phone, category FROM customer_categories WHERE account_id=?1'
+  ).bind(accountId).all()
+  const recipients = Array.isArray(existingRecipients) ? existingRecipients : existingRecipients.results || []
+  
+  console.log('Existing recipients:', recipients)
+  
+  // If no recipients, add some test data
+  if (recipients.length === 0) {
+    console.log('No recipients found, adding test data')
+    const testRecipients = [
+      '+1234567890',
+      '+9876543210', 
+      '+5555555555',
+      '+1111111111',
+      '+2222222222'
+    ]
+    
+    for (const phone of testRecipients) {
+      await env.DB.prepare(
+        'INSERT INTO customer_categories (account_id, user_phone, category, confidence_score) VALUES (?1, ?2, ?3, ?4)'
+      ).bind(accountId, phone, 'test_category', 0.8).run()
+    }
+    
+    console.log('Added test recipients:', testRecipients)
+    
+    return jsonResponse({
+      message: 'Added test recipients',
+      recipients: testRecipients,
+      account_id: accountId
+    })
+  }
+  
+  return jsonResponse({
+    message: 'Recipients found',
+    recipients: recipients.map((r: any) => ({ phone: r.user_phone, category: r.category })),
+    count: recipients.length,
+    account_id: accountId
+  })
+})
+
+// Debug endpoint to check campaign details
+router.get('/debug/campaign/:id', async ({ params }, env: Env) => {
+  const id = Number(params?.id || 0)
+  console.log('GET /debug/campaign/:id', id)
+  
+  if (!id) return jsonResponse({ error: 'invalid id' }, 400)
+  
+  const campaign = await env.DB.prepare(
+    `SELECT c.*, t.phone as session_phone, t.encrypted_session_data
+     FROM campaigns c 
+     LEFT JOIN telegram_sessions t ON c.telegram_session_id=t.id
+     WHERE c.id=?1`
+  ).bind(id).first()
+  
+  if (!campaign) return jsonResponse({ error: 'campaign not found' }, 404)
+  
+  const recipients = await env.DB.prepare(
+    'SELECT user_phone FROM customer_categories WHERE account_id=?1'
+  ).bind(campaign.account_id).all()
+  const recipientList = Array.isArray(recipients) ? recipients : recipients.results || []
+  
+  const sentLogs = await env.DB.prepare(
+    'SELECT user_phone, status FROM sent_logs WHERE campaign_id=?1'
+  ).bind(id).all()
+  const sentList = Array.isArray(sentLogs) ? sentLogs : sentLogs.results || []
+  
+  return jsonResponse({
+    campaign: {
+      id: campaign.id,
+      account_id: campaign.account_id,
+      message_text: campaign.message_text,
+      status: campaign.status,
+      telegram_session_id: campaign.telegram_session_id,
+      session_phone: campaign.session_phone,
+      has_session_data: !!campaign.encrypted_session_data
+    },
+    recipients: {
+      total: recipientList.length,
+      phones: recipientList.map((r: any) => r.user_phone)
+    },
+    sent_logs: {
+      total: sentList.length,
+      sent: sentList.filter((r: any) => r.status === 'sent').length,
+      failed: sentList.filter((r: any) => r.status !== 'sent').length,
+      logs: sentList
+    }
+  })
+})
 
 // Add a /test endpoint for deployment debugging
 router.all('/test', (request: Request) => {

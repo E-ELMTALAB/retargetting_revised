@@ -67,17 +67,36 @@ def health():
 @app.route('/execute_campaign', methods=['POST'])
 def execute_campaign():
     """Send a text message to a list of recipient phones sequentially with enhanced logging."""
-    payload = request.get_json(force=True)
+    print("[DEBUG] /execute_campaign called")
+    
+    try:
+        payload = request.get_json(force=True)
+        print(f"[DEBUG] Payload received: {payload}")
+    except Exception as e:
+        print(f"[ERROR] Failed to parse JSON payload: {e}")
+        return jsonify({'error': 'Invalid JSON payload'}), 400
+    
     session_str = payload.get('session')
     message = payload.get('message')
     recipients = payload.get('recipients', [])
     account_id = payload.get('account_id')
     campaign_id = payload.get('campaign_id')
 
+    print(f"[DEBUG] Parsed parameters:")
+    print(f"  - session_str: {session_str[:50] + '...' if session_str else 'None'}")
+    print(f"  - message: {message[:100] + '...' if message else 'None'}")
+    print(f"  - recipients: {recipients}")
+    print(f"  - account_id: {account_id}")
+    print(f"  - campaign_id: {campaign_id}")
+
     if not session_str or not message or not recipients:
+        print("[ERROR] Missing required parameters")
         return jsonify({'error': 'missing parameters'}), 400
     if campaign_id is None:
+        print("[ERROR] campaign_id is required")
         return jsonify({'error': 'campaign_id required'}), 400
+
+    print(f"[DEBUG] Starting campaign execution for campaign {campaign_id}")
 
     # Initialize campaign logging
     log_campaign_event(campaign_id, 'campaign_started', {
@@ -97,29 +116,37 @@ def execute_campaign():
     }
 
     async def _send():
+        print(f"[DEBUG] Starting _send function for campaign {campaign_id}")
         client = get_telegram_client(session_str)
         
         try:
             log_campaign_event(campaign_id, 'client_connecting', {'session_preview': session_str[:20] + '...'})
+            print(f"[DEBUG] Connecting to Telegram for campaign {campaign_id}")
             await client.connect()
             log_campaign_event(campaign_id, 'client_connected', {'connected': True})
+            print(f"[DEBUG] Successfully connected to Telegram for campaign {campaign_id}")
             
             # Get sender info for logging
             try:
                 me = await client.get_me()
                 sender_info = f"{me.first_name or ''} {me.last_name or ''} (@{me.username or 'no_username'})"
                 log_campaign_event(campaign_id, 'sender_info', {'sender': sender_info, 'phone': me.phone})
+                print(f"[DEBUG] Sender info for campaign {campaign_id}: {sender_info}")
             except Exception as e:
                 log_campaign_event(campaign_id, 'sender_info_error', {'error': str(e)})
+                print(f"[ERROR] Failed to get sender info for campaign {campaign_id}: {e}")
                 sender_info = "Unknown"
             
         except Exception as e:
             log_campaign_event(campaign_id, 'client_connection_failed', {'error': str(e)})
             CAMPAIGN_STATUS[campaign_id]['status'] = 'failed'
             CAMPAIGN_STATUS[campaign_id]['error'] = str(e)
+            print(f"[ERROR] Failed to connect to Telegram for campaign {campaign_id}: {e}")
             return []
         
         results = []
+        print(f"[DEBUG] Starting to send messages for campaign {campaign_id} to {len(recipients)} recipients")
+        
         for i, phone in enumerate(recipients):
             try:
                 CAMPAIGN_STATUS[campaign_id]['current_recipient'] = phone
@@ -131,6 +158,8 @@ def execute_campaign():
                     'message_preview': message[:50] + '...' if len(message) > 50 else message
                 })
                 
+                print(f"[DEBUG] Sending message {i+1}/{len(recipients)} to {phone} for campaign {campaign_id}")
+                
                 # Try to get recipient info if possible
                 try:
                     entity = await client.get_entity(phone)
@@ -139,11 +168,13 @@ def execute_campaign():
                         'phone': phone,
                         'name': recipient_info.strip() or 'Unknown'
                     })
+                    print(f"[DEBUG] Recipient info for {phone}: {recipient_info.strip() or 'Unknown'}")
                 except:
                     log_campaign_event(campaign_id, 'recipient_info', {
                         'phone': phone,
                         'name': 'Unknown (not in contacts)'
                     })
+                    print(f"[DEBUG] Recipient {phone} not in contacts")
                 
                 await client.send_message(phone, message)
                 
@@ -154,6 +185,7 @@ def execute_campaign():
                 })
                 
                 results.append({'phone': phone, 'status': 'sent', 'timestamp': datetime.now().isoformat()})
+                print(f"[DEBUG] Successfully sent message to {phone} for campaign {campaign_id}")
                 
                 # Rate limiting
                 await asyncio.sleep(1)
@@ -165,6 +197,7 @@ def execute_campaign():
                     'error': str(e)
                 })
                 
+                print(f"[DEBUG] Flood wait for {phone} in campaign {campaign_id}: {e.seconds} seconds")
                 await asyncio.sleep(e.seconds + 1)
                 
                 try:
@@ -175,6 +208,7 @@ def execute_campaign():
                         'success': True
                     })
                     results.append({'phone': phone, 'status': 'sent', 'timestamp': datetime.now().isoformat()})
+                    print(f"[DEBUG] Successfully sent message to {phone} after flood wait for campaign {campaign_id}")
                 except Exception as err:
                     CAMPAIGN_STATUS[campaign_id]['failed_count'] += 1
                     log_campaign_event(campaign_id, 'message_failed_after_flood_wait', {
@@ -182,6 +216,7 @@ def execute_campaign():
                         'error': str(err)
                     })
                     results.append({'phone': phone, 'status': 'failed', 'error': str(err), 'timestamp': datetime.now().isoformat()})
+                    print(f"[ERROR] Failed to send message to {phone} after flood wait for campaign {campaign_id}: {err}")
                     
             except errors.UserPrivacyRestrictedError as e:
                 CAMPAIGN_STATUS[campaign_id]['failed_count'] += 1
@@ -190,6 +225,7 @@ def execute_campaign():
                     'error': 'User privacy settings prevent sending messages'
                 })
                 results.append({'phone': phone, 'status': 'failed', 'error': 'Privacy restricted', 'timestamp': datetime.now().isoformat()})
+                print(f"[DEBUG] Privacy restricted for {phone} in campaign {campaign_id}")
                 
             except errors.UserNotParticipantError as e:
                 CAMPAIGN_STATUS[campaign_id]['failed_count'] += 1
@@ -198,6 +234,7 @@ def execute_campaign():
                     'error': 'User is not a participant in the chat'
                 })
                 results.append({'phone': phone, 'status': 'failed', 'error': 'Not participant', 'timestamp': datetime.now().isoformat()})
+                print(f"[DEBUG] User not participant for {phone} in campaign {campaign_id}")
                 
             except errors.UserDeactivatedBanError as e:
                 CAMPAIGN_STATUS[campaign_id]['failed_count'] += 1
@@ -206,6 +243,7 @@ def execute_campaign():
                     'error': 'User account is deactivated'
                 })
                 results.append({'phone': phone, 'status': 'failed', 'error': 'User deactivated', 'timestamp': datetime.now().isoformat()})
+                print(f"[DEBUG] User deactivated for {phone} in campaign {campaign_id}")
                 
             except Exception as err:
                 CAMPAIGN_STATUS[campaign_id]['failed_count'] += 1
@@ -215,12 +253,15 @@ def execute_campaign():
                     'error_type': type(err).__name__
                 })
                 results.append({'phone': phone, 'status': 'failed', 'error': str(err), 'timestamp': datetime.now().isoformat()})
+                print(f"[ERROR] Failed to send message to {phone} for campaign {campaign_id}: {err}")
         
         try:
             await client.disconnect()
             log_campaign_event(campaign_id, 'client_disconnected', {'disconnected': True})
+            print(f"[DEBUG] Disconnected from Telegram for campaign {campaign_id}")
         except Exception as e:
             log_campaign_event(campaign_id, 'client_disconnect_error', {'error': str(e)})
+            print(f"[ERROR] Error disconnecting from Telegram for campaign {campaign_id}: {e}")
         
         # Update final status
         CAMPAIGN_STATUS[campaign_id]['status'] = 'completed'
@@ -233,17 +274,22 @@ def execute_campaign():
             'success_rate': f"{(CAMPAIGN_STATUS[campaign_id]['sent_count'] / len(recipients) * 100):.1f}%"
         })
         
+        print(f"[DEBUG] Campaign {campaign_id} completed: {CAMPAIGN_STATUS[campaign_id]['sent_count']} sent, {CAMPAIGN_STATUS[campaign_id]['failed_count']} failed")
+        
         return results
 
     try:
+        print(f"[DEBUG] Starting asyncio.run for campaign {campaign_id}")
         results = asyncio.run(_send())
+        print(f"[DEBUG] asyncio.run completed for campaign {campaign_id}, results: {results}")
     except Exception as e:
         log_campaign_event(campaign_id, 'campaign_error', {'error': str(e)})
         CAMPAIGN_STATUS[campaign_id]['status'] = 'failed'
         CAMPAIGN_STATUS[campaign_id]['error'] = str(e)
-        print('[ERROR] execute_campaign', e)
+        print(f'[ERROR] execute_campaign failed for campaign {campaign_id}: {e}')
         return jsonify({'error': str(e)}), 500
 
+    print(f"[DEBUG] Returning success response for campaign {campaign_id}")
     return jsonify({'status': 'completed', 'results': results})
 
 
