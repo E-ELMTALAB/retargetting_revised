@@ -632,8 +632,16 @@ const campaignLogsHandler = async ({ params }: { params: any }, env: Env) => {
 router.get('/campaigns/:id/logs', campaignLogsHandler)
 router.get('/campaigns/:id/logs/', campaignLogsHandler)
 
-// Default route
-router.all('*', () => new Response('Not Found', { status: 404 }))
+// Add a /test endpoint for deployment debugging
+router.all('/test', (request: Request) => {
+  return jsonResponse({ ok: true, method: request.method, url: request.url })
+})
+
+// Add a catch-all logger for unmatched routes
+router.all('*', (request: Request) => {
+  const logs = [`[CATCH-ALL] Unmatched route: ${request.method} ${request.url}`]
+  return jsonResponse({ error: 'Not Found', logs }, 404)
+})
 
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext) {

@@ -213,5 +213,11 @@ def get_campaign_logs(campaign_id):
     logs = CAMPAIGN_LOGS.get(campaign_id, [])
     return jsonify({'logs': logs})
 
+@app.route('/stop_campaign/<int:campaign_id>', methods=['POST'])
+def stop_campaign(campaign_id):
+    print(f"[DEBUG] Stopping campaign {campaign_id}")
+    # TODO: Implement actual stop logic if needed
+    return jsonify({"status": "stopped", "campaign_id": campaign_id})
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
