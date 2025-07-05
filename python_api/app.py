@@ -71,12 +71,16 @@ def execute_campaign():
     campaign_id = payload.get('campaign_id')
     account_id = payload.get('account_id')
     logger.info('execute_campaign payload %s', payload)
+    print('== Python API executing campaign', campaign_id, '==')
+    print('session snippet', session_str[:10] if session_str else None)
+    print('recipients count', len(recipients))
 
     if not session_str or not message or not recipients:
         return jsonify({'error': 'missing parameters'}), 400
 
     CAMPAIGN_LOGS[campaign_id] = []
     STOP_FLAGS[campaign_id] = False
+    print('STOP_FLAGS set to False for', campaign_id)
 
     async def _send():
         client = get_telegram_client(session_str)
@@ -85,17 +89,20 @@ def execute_campaign():
         for phone in recipients:
             if STOP_FLAGS.get(campaign_id):
                 logger.info('Campaign %s stop requested', campaign_id)
+                print('Stop flag detected for', campaign_id)
                 CAMPAIGN_LOGS[campaign_id].append({'status': 'stopped'})
                 break
             try:
                 await client.send_message(phone, message)
                 logger.info('sent to %s', phone)
+                print('message sent to', phone)
                 entry = {'phone': phone, 'status': 'sent'}
                 results.append(entry)
                 CAMPAIGN_LOGS[campaign_id].append(entry)
                 await asyncio.sleep(1)
             except Exception as e:
                 logger.error('send error %s %s', phone, e)
+                print('send error', phone, e)
                 entry = {'phone': phone, 'status': 'failed', 'error': str(e)}
                 results.append(entry)
                 CAMPAIGN_LOGS[campaign_id].append(entry)
@@ -106,9 +113,11 @@ def execute_campaign():
         results = asyncio.run(_send())
     except Exception as e:
         logger.error('execute_campaign error %s', e)
+        print('execute_campaign failed', e)
         return jsonify({'error': str(e)}), 500
 
     logger.info('campaign %s completed with %d results', campaign_id, len(results))
+    print('campaign', campaign_id, 'completed, results', len(results))
     return jsonify({'status': 'completed', 'results': results})
 
 
@@ -116,7 +125,10 @@ def execute_campaign():
 def stop_campaign(cid: int):
     """Request stopping an active campaign."""
     logger.info('stop_campaign %s', cid)
+    print('== Python API stop campaign', cid, '==')
+    print('current STOP_FLAGS', STOP_FLAGS)
     STOP_FLAGS[cid] = True
+    print('STOP_FLAGS set to True for', cid)
     CAMPAIGN_LOGS.setdefault(cid, []).append({'status': 'stop_requested'})
     return jsonify({'status': 'stopping'})
 

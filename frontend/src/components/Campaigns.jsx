@@ -2,9 +2,10 @@ import React, { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import CampaignForm from './CampaignForm'
 
-const API_BASE =
+const API_BASE = (
   import.meta.env.VITE_API_BASE ||
   'https://retargetting-worker.elmtalabx.workers.dev'
+).replace(/\/$/, '')
 
 export default function Campaigns({ accountId, sessionId, onSelectCampaign }) {
   const [campaigns, setCampaigns] = useState([])
@@ -24,17 +25,35 @@ export default function Campaigns({ accountId, sessionId, onSelectCampaign }) {
   }, [accountId])
 
   const startCampaign = id => {
+    console.log('start/resume campaign', id)
     fetch(`${API_BASE}/campaigns/${id}/start`, { method: 'POST' })
+      .then(r => {
+        if (!r.ok) {
+          console.error('start campaign failed', r.status)
+          throw new Error('start failed')
+        }
+        return r
+      })
       .then(() => {
         fetchCampaigns()
         onSelectCampaign && onSelectCampaign(id)
+        console.log('campaign started/resumed', id)
       })
       .catch(err => console.error('start campaign', err))
   }
 
   const stopCampaign = id => {
+    console.log('stop campaign', id)
     fetch(`${API_BASE}/campaigns/${id}/stop`, { method: 'POST' })
+      .then(r => {
+        if (!r.ok) {
+          console.error('stop campaign failed', r.status)
+          throw new Error('stop failed')
+        }
+        return r
+      })
       .then(() => fetchCampaigns())
+      .then(() => console.log('campaign stopped', id))
       .catch(err => console.error('stop campaign', err))
   }
 
@@ -69,13 +88,13 @@ export default function Campaigns({ accountId, sessionId, onSelectCampaign }) {
 
                 <>
                   <button
-                    className="text-sm underline text-blue-600"
+                    className="px-2 py-1 text-sm bg-blue-500 text-white rounded"
                     onClick={() => monitor(c.id)}
                   >
                     Monitor
                   </button>
                   <button
-                    className="text-sm underline text-red-600 ml-2"
+                    className="ml-2 px-2 py-1 text-sm bg-red-600 text-white rounded"
                     onClick={() => stopCampaign(c.id)}
                   >
                     Stop
@@ -84,10 +103,10 @@ export default function Campaigns({ accountId, sessionId, onSelectCampaign }) {
 
               ) : (
                 <button
-                  className="text-sm underline text-green-700"
+                  className="px-2 py-1 text-sm bg-green-600 text-white rounded"
                   onClick={() => startCampaign(c.id)}
                 >
-                  Run
+                  {c.status === 'stopped' ? 'Resume' : 'Run'}
                 </button>
               )}
             </div>
