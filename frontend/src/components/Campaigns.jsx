@@ -66,6 +66,7 @@ export default function Campaigns({ accountId, sessionId, onSelectCampaign }) {
             <div className="flex items-center gap-4">
               <span className={`text-xs px-2 py-1 rounded ${c.status === 'running' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'}`}>{c.status}</span>
               {c.status === 'running' ? (
+
                 <>
                   <button
                     className="text-sm underline text-blue-600"
@@ -80,6 +81,7 @@ export default function Campaigns({ accountId, sessionId, onSelectCampaign }) {
                     Stop
                   </button>
                 </>
+
               ) : (
                 <button
                   className="text-sm underline text-green-700"

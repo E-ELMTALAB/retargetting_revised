@@ -32,4 +32,6 @@ if __name__ == '__main__':
         time.sleep(1)
         r = requests.get(f"{API}/campaigns/{cid}/logs", timeout=10)
         print('campaign logs', r.status_code, r.text[:200])
+
         requests.post(f"{API}/campaigns/{cid}/stop")
+

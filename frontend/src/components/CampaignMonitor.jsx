@@ -11,6 +11,7 @@ export default function CampaignMonitor({ accountId, campaignId, onSelectCampaig
   const [running, setRunning] = useState([])
   const [activeId, setActiveId] = useState(campaignId || null)
 
+
   const stopCampaign = id => {
     fetch(`${API_BASE}/campaigns/${id}/stop`, { method: 'POST' })
       .catch(e => console.error('stop campaign', e))
@@ -21,6 +22,7 @@ export default function CampaignMonitor({ accountId, campaignId, onSelectCampaig
   }, [campaignId])
 
   useEffect(() => {
+
     if (!accountId) return
     const fetchRunning = () => {
       fetch(`${API_BASE}/campaigns?account_id=${accountId}`)
@@ -96,6 +98,7 @@ export default function CampaignMonitor({ accountId, campaignId, onSelectCampaig
                   style={{ width: `${progress}%` }}
                 />
               </div>
+
               <div className="flex items-center justify-between mt-1">
                 <p className="text-sm">{progress}% complete</p>
                 <button
@@ -105,6 +108,7 @@ export default function CampaignMonitor({ accountId, campaignId, onSelectCampaig
                   Stop
                 </button>
               </div>
+
             </div>
 
             <div>
