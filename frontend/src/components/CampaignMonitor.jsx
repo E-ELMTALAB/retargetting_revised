@@ -44,8 +44,8 @@ export default function CampaignMonitor({ accountId, campaignId, onSelectCampaig
       console.log('Running campaigns data:', data)
       
       if (response.ok) {
-        const runningCampaigns = (data.campaigns || []).filter(c => 
-          c.status === 'running' || c.status === 'created'
+        const runningCampaigns = (data.campaigns || []).filter(
+          c => c.status === 'running'
         )
         setRunning(runningCampaigns)
         

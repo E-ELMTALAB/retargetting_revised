@@ -392,6 +392,11 @@ router.post('/campaigns/:id/start', async ({ params }, env: Env) => {
     session: row.encrypted_session_data ? row.encrypted_session_data.substring(0, 50) + '...' : 'null'
   })
 
+  await env.DB.prepare('UPDATE campaigns SET status=?1 WHERE id=?2')
+    .bind('running', id)
+    .run()
+  console.log('campaign', id, 'status set to running')
+
   let resp: Response
   try {
     resp = await fetch(`${env.PYTHON_API_URL}/execute_campaign`, {
@@ -411,11 +416,6 @@ router.post('/campaigns/:id/start', async ({ params }, env: Env) => {
     console.error('Python API returned error:', data)
     return jsonResponse({ error: 'python error', details: data }, resp.status)
   }
-
-  await env.DB.prepare('UPDATE campaigns SET status=?1 WHERE id=?2')
-    .bind('running', id)
-    .run()
-  console.log('campaign', id, 'status set to running')
 
   return jsonResponse({ status: 'started', result: data })
 })
