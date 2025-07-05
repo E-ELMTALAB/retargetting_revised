@@ -415,33 +415,45 @@ router.post('/campaigns/:id/start', async ({ params }, env: Env) => {
 
 // Stop a running campaign (POST and GET, with and without trailing slash)
 const stopCampaignHandler = async ({ params }: { params: any }, env: Env) => {
+  const logs: string[] = []
   const id = Number(params?.id || 0)
-  console.log('STOP /campaigns/:id/stop', id)
-  if (!id) return jsonResponse({ error: 'invalid id' }, 400)
+  logs.push(`[STOP] Called for campaign id: ${id}`)
+  if (!id) {
+    logs.push('[STOP] Invalid id')
+    return jsonResponse({ error: 'invalid id', logs }, 400)
+  }
 
   let resp: Response
   try {
+    logs.push(`[STOP] Sending request to Python API: ${env.PYTHON_API_URL}/stop_campaign/${id}`)
     resp = await fetch(`${env.PYTHON_API_URL}/stop_campaign/${id}`, {
       method: 'POST',
     })
-    console.log('stop_campaign response status', resp.status)
+    logs.push(`[STOP] Python API response status: ${resp.status}`)
   } catch (err) {
-    console.error('fetch stop_campaign error', err)
-    return jsonResponse({ error: 'api request failed' }, 500)
+    logs.push(`[STOP] Fetch error: ${err && ((err as any).stack || (err as any).message || err.toString())}`)
+    return jsonResponse({ error: 'api request failed', logs }, 500)
   }
 
-  const data = await resp.json().catch(() => ({}))
-  console.log('stop_campaign response data', data)
+  const data = await resp.json().catch(e => { logs.push(`[STOP] JSON parse error: ${e}`); return {} })
+  logs.push(`[STOP] Python API response data: ${JSON.stringify(data)}`)
   if (!resp.ok) {
-    return jsonResponse({ error: 'python error', details: data }, resp.status)
+    logs.push('[STOP] Python API returned error')
+    return jsonResponse({ error: 'python error', details: data, logs }, resp.status)
   }
 
-  await env.DB.prepare('UPDATE campaigns SET status=?1 WHERE id=?2')
-    .bind('stopped', id)
-    .run()
-  console.log('campaign', id, 'status set to stopped')
+  try {
+    await env.DB.prepare('UPDATE campaigns SET status=?1 WHERE id=?2')
+      .bind('stopped', id)
+      .run()
+    logs.push(`[STOP] Campaign ${id} status set to stopped in DB`)
+  } catch (err) {
+    logs.push(`[STOP] DB update error: ${err && ((err as any).stack || (err as any).message || err.toString())}`)
+    return jsonResponse({ error: 'db error', logs }, 500)
+  }
 
-  return jsonResponse({ status: 'stopped', result: data })
+  logs.push(`[STOP] Success for campaign ${id}`)
+  return jsonResponse({ status: 'stopped', result: data, logs })
 }
 router.post('/campaigns/:id/stop', stopCampaignHandler)
 router.post('/campaigns/:id/stop/', stopCampaignHandler)
@@ -591,18 +603,31 @@ router.get('/campaigns/:id/analytics', async ({ params }, env: Env) => {
 
 // Fetch logs for a campaign from the Python API (GET, with and without trailing slash)
 const campaignLogsHandler = async ({ params }: { params: any }, env: Env) => {
+  const logs: string[] = []
   const id = Number(params?.id || 0)
-  if (!id) return jsonResponse({ error: 'invalid id' }, 400)
+  logs.push(`[LOGS] Called for campaign id: ${id}`)
+  if (!id) {
+    logs.push('[LOGS] Invalid id')
+    return jsonResponse({ error: 'invalid id', logs }, 400)
+  }
   let resp: Response
   try {
+    logs.push(`[LOGS] Fetching logs from Python API: ${env.PYTHON_API_URL}/campaign_logs/${id}`)
     resp = await fetch(`${env.PYTHON_API_URL}/campaign_logs/${id}`)
+    logs.push(`[LOGS] Python API response status: ${resp.status}`)
   } catch (err) {
-    console.error('fetch campaign logs error', err)
-    return jsonResponse({ error: 'api request failed' }, 500)
+    logs.push(`[LOGS] Fetch error: ${err && ((err as any).stack || (err as any).message || err.toString())}`)
+    return jsonResponse({ error: 'api request failed', logs }, 500)
   }
-  const data = await resp.json().catch(() => ({}))
-  if (!resp.ok) return jsonResponse({ error: 'python error', details: data }, resp.status)
-  return jsonResponse(data)
+  const data = await resp.json().catch(e => { logs.push(`[LOGS] JSON parse error: ${e}`); return {} })
+  logs.push(`[LOGS] Python API response data: ${JSON.stringify(data)}`)
+  if (!resp.ok) {
+    logs.push('[LOGS] Python API returned error')
+    return jsonResponse({ error: 'python error', details: data, logs }, resp.status)
+  }
+  logs.push(`[LOGS] Success for campaign ${id}`)
+  const safeData = (data && typeof data === 'object' && !Array.isArray(data)) ? data : { data }
+  return jsonResponse({ ...safeData, logs })
 }
 router.get('/campaigns/:id/logs', campaignLogsHandler)
 router.get('/campaigns/:id/logs/', campaignLogsHandler)
