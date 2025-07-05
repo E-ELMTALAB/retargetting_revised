@@ -409,6 +409,34 @@ router.post('/campaigns/:id/start', async ({ params }, env: Env) => {
   return jsonResponse({ status: 'started', result: data })
 })
 
+// Stop a running campaign
+router.post('/campaigns/:id/stop', async ({ params }, env: Env) => {
+  const id = Number(params?.id || 0)
+  console.log('POST /campaigns/:id/stop', id)
+  if (!id) return jsonResponse({ error: 'invalid id' }, 400)
+
+  let resp: Response
+  try {
+    resp = await fetch(`${env.PYTHON_API_URL}/stop_campaign/${id}`, {
+      method: 'POST',
+    })
+  } catch (err) {
+    console.error('fetch stop_campaign error', err)
+    return jsonResponse({ error: 'api request failed' }, 500)
+  }
+
+  const data = await resp.json().catch(() => ({}))
+  if (!resp.ok) {
+    return jsonResponse({ error: 'python error', details: data }, resp.status)
+  }
+
+  await env.DB.prepare('UPDATE campaigns SET status=?1 WHERE id=?2')
+    .bind('stopped', id)
+    .run()
+
+  return jsonResponse({ status: 'stopped', result: data })
+})
+
 // List categories
 router.get('/categories', async (request: Request, env: Env) => {
   const accountId = 1
