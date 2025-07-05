@@ -432,6 +432,7 @@ router.post('/campaigns/:id/stop', async ({ params }, env: Env) => {
   }
 
   const data = await resp.json().catch(() => ({}))
+  console.log('stop_campaign response data', data)
   if (!resp.ok) {
     return jsonResponse({ error: 'python error', details: data }, resp.status)
   }

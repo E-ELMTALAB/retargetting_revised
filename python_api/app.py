@@ -126,6 +126,9 @@ def stop_campaign(cid: int):
     """Request stopping an active campaign."""
     logger.info('stop_campaign %s', cid)
     print('== Python API stop campaign', cid, '==')
+
+    print('current STOP_FLAGS', STOP_FLAGS)
+
     STOP_FLAGS[cid] = True
     print('STOP_FLAGS set to True for', cid)
     CAMPAIGN_LOGS.setdefault(cid, []).append({'status': 'stop_requested'})
