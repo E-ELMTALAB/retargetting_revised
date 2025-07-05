@@ -380,49 +380,16 @@ router.post('/campaigns/:id/start', async ({ params }, env: Env) => {
     return jsonResponse({ error: 'no session data found' }, 400)
   }
 
-  // Get all possible recipients
-  const phonesRes = await env.DB.prepare(
-    'SELECT user_phone FROM customer_categories WHERE account_id=?1'
-  ).bind(row.account_id).all()
-  const phoneRows = Array.isArray(phonesRes) ? phonesRes : phonesRes.results || []
-  const allRecipients = phoneRows.map((r: any) => r.user_phone)
-  console.log('all recipients count', allRecipients.length)
-  console.log('all recipients:', allRecipients)
-
-  if (allRecipients.length === 0) {
-    console.log('No recipients found in customer_categories for account', row.account_id)
-    return jsonResponse({ 
-      error: 'no recipients found', 
-      message: 'No recipients found in customer_categories table. Please add some recipients first.',
-      account_id: row.account_id 
-    }, 400)
-  }
-
-  // Get already sent recipients for this campaign
-  const sentRows = await env.DB.prepare(
-    'SELECT user_phone FROM sent_logs WHERE campaign_id=?1 AND status=?2'
-  ).bind(id, 'sent').all()
-  const sentPhones = new Set((Array.isArray(sentRows) ? sentRows : sentRows.results || []).map((r: any) => r.user_phone))
-  const recipients = allRecipients.filter((phone: string) => !sentPhones.has(phone))
-  console.log('recipients to send (unsent) count', recipients.length)
-  console.log('recipients to send:', recipients)
-
-  if (recipients.length === 0) {
-    return jsonResponse({ status: 'nothing to resume', message: 'All recipients have already been sent this campaign.' })
-  }
-
   // Log the request being sent to Python API
   const requestBody = {
     session: row.encrypted_session_data,
     message: row.message_text,
-    recipients,
     account_id: row.account_id,
     campaign_id: row.id,
   }
   console.log('Sending to Python API:', {
     ...requestBody,
-    session: row.encrypted_session_data ? row.encrypted_session_data.substring(0, 50) + '...' : 'null',
-    recipients_count: recipients.length
+    session: row.encrypted_session_data ? row.encrypted_session_data.substring(0, 50) + '...' : 'null'
   })
 
   let resp: Response

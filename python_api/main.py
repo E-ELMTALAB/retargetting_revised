@@ -10,8 +10,8 @@ from datetime import datetime
 app = Flask(__name__)
 
 # Global variables
-TELEGRAM_API_ID = os.environ.get('TELEGRAM_API_ID') or 27418503
-TELEGRAM_API_HASH = os.environ.get('TELEGRAM_API_HASH') or "911f278e674b5aaa7a4ecf14a49ea4d7"
+TELEGRAM_API_ID = 27418503
+TELEGRAM_API_HASH = "911f278e674b5aaa7a4ecf14a49ea4d7"
 SESSION_FILE = 'me.session'
 
 # Validate API credentials
@@ -99,7 +99,7 @@ def health():
 
 @app.route('/execute_campaign', methods=['POST'])
 def execute_campaign():
-    """Send a text message to a list of recipient phones sequentially with enhanced logging."""
+    """Send a text message to all user dialogs (chats) that the Telegram account has."""
     print("[DEBUG] /execute_campaign called")
     
     try:
@@ -111,18 +111,16 @@ def execute_campaign():
     
     session_str = payload.get('session')
     message = payload.get('message')
-    recipients = payload.get('recipients', [])
     account_id = payload.get('account_id')
     campaign_id = payload.get('campaign_id')
 
     print(f"[DEBUG] Parsed parameters:")
     print(f"  - session_str: {session_str[:50] + '...' if session_str else 'None'}")
     print(f"  - message: {message[:100] + '...' if message else 'None'}")
-    print(f"  - recipients: {recipients}")
     print(f"  - account_id: {account_id}")
     print(f"  - campaign_id: {campaign_id}")
 
-    if not session_str or not message or not recipients:
+    if not session_str or not message:
         print("[ERROR] Missing required parameters")
         return jsonify({'error': 'missing parameters'}), 400
     if campaign_id is None:
@@ -134,7 +132,6 @@ def execute_campaign():
     # Initialize campaign logging
     log_campaign_event(campaign_id, 'campaign_started', {
         'account_id': account_id,
-        'total_recipients': len(recipients),
         'message_preview': message[:100] + '...' if len(message) > 100 else message,
         'session_preview': session_str[:20] + '...' if session_str else 'None'
     })
@@ -142,7 +139,7 @@ def execute_campaign():
     CAMPAIGN_STATUS[campaign_id] = {
         'status': 'running',
         'started_at': datetime.now().isoformat(),
-        'total_recipients': len(recipients),
+        'total_recipients': 0,  # Will be updated as we find dialogs
         'sent_count': 0,
         'failed_count': 0,
         'current_recipient': None
@@ -178,115 +175,161 @@ def execute_campaign():
             return []
         
         results = []
-        print(f"[DEBUG] Starting to send messages for campaign {campaign_id} to {len(recipients)} recipients")
+        total_dialogs = 0
+        processed_dialogs = 0
         
-        for i, phone in enumerate(recipients):
+        print(f"[DEBUG] Starting to iterate through dialogs for campaign {campaign_id}")
+        
+        # Iterate through all dialogs (chats) that the user has
+        async for dialog in client.iter_dialogs():
             try:
-                CAMPAIGN_STATUS[campaign_id]['current_recipient'] = phone
-                CAMPAIGN_STATUS[campaign_id]['progress'] = f"{i+1}/{len(recipients)}"
+                # Skip non-user dialogs (groups, channels, etc.)
+                if not dialog.is_user:
+                    print(f"[DEBUG] Skipping non-user dialog: {dialog.name}")
+                    continue
+                
+                user = dialog.entity
+                
+                # Skip bots
+                if user.bot:
+                    print(f"[DEBUG] Skipping bot: {user.username or user.id}")
+                    continue
+                
+                total_dialogs += 1
+                processed_dialogs += 1
+                
+                CAMPAIGN_STATUS[campaign_id]['current_recipient'] = f"{user.username or user.id}"
+                CAMPAIGN_STATUS[campaign_id]['total_recipients'] = total_dialogs
+                CAMPAIGN_STATUS[campaign_id]['progress'] = f"{processed_dialogs} dialogs processed"
                 
                 log_campaign_event(campaign_id, 'sending_message', {
-                    'recipient': phone,
-                    'progress': f"{i+1}/{len(recipients)}",
+                    'recipient': f"{user.username or user.id}",
+                    'progress': f"{processed_dialogs} dialogs processed",
                     'message_preview': message[:50] + '...' if len(message) > 50 else message
                 })
                 
-                print(f"[DEBUG] Sending message {i+1}/{len(recipients)} to {phone} for campaign {campaign_id}")
+                print(f"[DEBUG] Sending message to dialog {processed_dialogs}: {user.username or user.id}")
                 
-                # Try to get recipient info if possible
-                try:
-                    entity = await client.get_entity(phone)
-                    recipient_info = f"{getattr(entity, 'first_name', '')} {getattr(entity, 'last_name', '')}"
-                    log_campaign_event(campaign_id, 'recipient_info', {
-                        'phone': phone,
-                        'name': recipient_info.strip() or 'Unknown'
-                    })
-                    print(f"[DEBUG] Recipient info for {phone}: {recipient_info.strip() or 'Unknown'}")
-                except:
-                    log_campaign_event(campaign_id, 'recipient_info', {
-                        'phone': phone,
-                        'name': 'Unknown (not in contacts)'
-                    })
-                    print(f"[DEBUG] Recipient {phone} not in contacts")
+                # Get user info for logging
+                user_info = f"{getattr(user, 'first_name', '')} {getattr(user, 'last_name', '')}"
+                log_campaign_event(campaign_id, 'recipient_info', {
+                    'recipient': f"{user.username or user.id}",
+                    'name': user_info.strip() or 'Unknown'
+                })
                 
-                await client.send_message(phone, message)
+                # Send the message to this user
+                await client.send_message(user, message)
                 
                 CAMPAIGN_STATUS[campaign_id]['sent_count'] += 1
                 log_campaign_event(campaign_id, 'message_sent', {
-                    'recipient': phone,
+                    'recipient': f"{user.username or user.id}",
                     'success': True
                 })
                 
-                results.append({'phone': phone, 'status': 'sent', 'timestamp': datetime.now().isoformat()})
-                print(f"[DEBUG] Successfully sent message to {phone} for campaign {campaign_id}")
+                results.append({
+                    'recipient': f"{user.username or user.id}",
+                    'status': 'sent', 
+                    'timestamp': datetime.now().isoformat()
+                })
                 
-                # Rate limiting
+                print(f"[DEBUG] Successfully sent message to {user.username or user.id}")
+                
+                # Rate limiting - delay between messages
                 await asyncio.sleep(1)
                 
             except errors.FloodWaitError as e:
                 log_campaign_event(campaign_id, 'flood_wait', {
-                    'recipient': phone,
+                    'recipient': f"{user.username or user.id}",
                     'wait_seconds': e.seconds,
                     'error': str(e)
                 })
                 
-                print(f"[DEBUG] Flood wait for {phone} in campaign {campaign_id}: {e.seconds} seconds")
+                print(f"[DEBUG] Flood wait for {user.username or user.id}: {e.seconds} seconds")
                 await asyncio.sleep(e.seconds + 1)
                 
                 try:
-                    await client.send_message(phone, message)
+                    await client.send_message(user, message)
                     CAMPAIGN_STATUS[campaign_id]['sent_count'] += 1
                     log_campaign_event(campaign_id, 'message_sent_after_flood_wait', {
-                        'recipient': phone,
+                        'recipient': f"{user.username or user.id}",
                         'success': True
                     })
-                    results.append({'phone': phone, 'status': 'sent', 'timestamp': datetime.now().isoformat()})
-                    print(f"[DEBUG] Successfully sent message to {phone} after flood wait for campaign {campaign_id}")
+                    results.append({
+                        'recipient': f"{user.username or user.id}",
+                        'status': 'sent', 
+                        'timestamp': datetime.now().isoformat()
+                    })
+                    print(f"[DEBUG] Successfully sent message to {user.username or user.id} after flood wait")
                 except Exception as err:
                     CAMPAIGN_STATUS[campaign_id]['failed_count'] += 1
                     log_campaign_event(campaign_id, 'message_failed_after_flood_wait', {
-                        'recipient': phone,
+                        'recipient': f"{user.username or user.id}",
                         'error': str(err)
                     })
-                    results.append({'phone': phone, 'status': 'failed', 'error': str(err), 'timestamp': datetime.now().isoformat()})
-                    print(f"[ERROR] Failed to send message to {phone} after flood wait for campaign {campaign_id}: {err}")
+                    results.append({
+                        'recipient': f"{user.username or user.id}",
+                        'status': 'failed', 
+                        'error': str(err), 
+                        'timestamp': datetime.now().isoformat()
+                    })
+                    print(f"[ERROR] Failed to send message to {user.username or user.id} after flood wait: {err}")
                     
             except errors.UserPrivacyRestrictedError as e:
                 CAMPAIGN_STATUS[campaign_id]['failed_count'] += 1
                 log_campaign_event(campaign_id, 'privacy_restricted', {
-                    'recipient': phone,
+                    'recipient': f"{user.username or user.id}",
                     'error': 'User privacy settings prevent sending messages'
                 })
-                results.append({'phone': phone, 'status': 'failed', 'error': 'Privacy restricted', 'timestamp': datetime.now().isoformat()})
-                print(f"[DEBUG] Privacy restricted for {phone} in campaign {campaign_id}")
+                results.append({
+                    'recipient': f"{user.username or user.id}",
+                    'status': 'failed', 
+                    'error': 'Privacy restricted', 
+                    'timestamp': datetime.now().isoformat()
+                })
+                print(f"[DEBUG] Privacy restricted for {user.username or user.id}")
                 
             except errors.UserNotParticipantError as e:
                 CAMPAIGN_STATUS[campaign_id]['failed_count'] += 1
                 log_campaign_event(campaign_id, 'user_not_participant', {
-                    'recipient': phone,
+                    'recipient': f"{user.username or user.id}",
                     'error': 'User is not a participant in the chat'
                 })
-                results.append({'phone': phone, 'status': 'failed', 'error': 'Not participant', 'timestamp': datetime.now().isoformat()})
-                print(f"[DEBUG] User not participant for {phone} in campaign {campaign_id}")
+                results.append({
+                    'recipient': f"{user.username or user.id}",
+                    'status': 'failed', 
+                    'error': 'Not participant', 
+                    'timestamp': datetime.now().isoformat()
+                })
+                print(f"[DEBUG] User not participant for {user.username or user.id}")
                 
             except errors.UserDeactivatedBanError as e:
                 CAMPAIGN_STATUS[campaign_id]['failed_count'] += 1
                 log_campaign_event(campaign_id, 'user_deactivated', {
-                    'recipient': phone,
+                    'recipient': f"{user.username or user.id}",
                     'error': 'User account is deactivated'
                 })
-                results.append({'phone': phone, 'status': 'failed', 'error': 'User deactivated', 'timestamp': datetime.now().isoformat()})
-                print(f"[DEBUG] User deactivated for {phone} in campaign {campaign_id}")
+                results.append({
+                    'recipient': f"{user.username or user.id}",
+                    'status': 'failed', 
+                    'error': 'User deactivated', 
+                    'timestamp': datetime.now().isoformat()
+                })
+                print(f"[DEBUG] User deactivated for {user.username or user.id}")
                 
             except Exception as err:
                 CAMPAIGN_STATUS[campaign_id]['failed_count'] += 1
                 log_campaign_event(campaign_id, 'message_failed', {
-                    'recipient': phone,
+                    'recipient': f"{user.username or user.id}",
                     'error': str(err),
                     'error_type': type(err).__name__
                 })
-                results.append({'phone': phone, 'status': 'failed', 'error': str(err), 'timestamp': datetime.now().isoformat()})
-                print(f"[ERROR] Failed to send message to {phone} for campaign {campaign_id}: {err}")
+                results.append({
+                    'recipient': f"{user.username or user.id}",
+                    'status': 'failed', 
+                    'error': str(err), 
+                    'timestamp': datetime.now().isoformat()
+                })
+                print(f"[ERROR] Failed to send message to {user.username or user.id}: {err}")
         
         try:
             await client.disconnect()
@@ -304,10 +347,11 @@ def execute_campaign():
         log_campaign_event(campaign_id, 'campaign_completed', {
             'total_sent': CAMPAIGN_STATUS[campaign_id]['sent_count'],
             'total_failed': CAMPAIGN_STATUS[campaign_id]['failed_count'],
-            'success_rate': f"{(CAMPAIGN_STATUS[campaign_id]['sent_count'] / len(recipients) * 100):.1f}%"
+            'total_dialogs': total_dialogs,
+            'success_rate': f"{(CAMPAIGN_STATUS[campaign_id]['sent_count'] / max(total_dialogs, 1) * 100):.1f}%"
         })
         
-        print(f"[DEBUG] Campaign {campaign_id} completed: {CAMPAIGN_STATUS[campaign_id]['sent_count']} sent, {CAMPAIGN_STATUS[campaign_id]['failed_count']} failed")
+        print(f"[DEBUG] Campaign {campaign_id} completed: {CAMPAIGN_STATUS[campaign_id]['sent_count']} sent, {CAMPAIGN_STATUS[campaign_id]['failed_count']} failed, {total_dialogs} total dialogs")
         
         return results
 
@@ -460,7 +504,7 @@ def get_campaign_logs(campaign_id):
     for log in logs:
         if log['type'] in ['message_sent', 'message_failed', 'message_sent_after_flood_wait', 'message_failed_after_flood_wait']:
             formatted_logs.append({
-                'phone': log['details'].get('recipient', 'Unknown'),
+                'phone': log['details'].get('recipient', 'Unknown'),  # Now contains username/id
                 'status': 'sent' if 'sent' in log['type'] else 'failed',
                 'error': log['details'].get('error'),
                 'timestamp': log['timestamp']
