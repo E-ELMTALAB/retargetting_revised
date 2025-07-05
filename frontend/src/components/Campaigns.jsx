@@ -24,17 +24,21 @@ export default function Campaigns({ accountId, sessionId, onSelectCampaign }) {
   }, [accountId])
 
   const startCampaign = id => {
+    console.log('start/resume campaign', id)
     fetch(`${API_BASE}/campaigns/${id}/start`, { method: 'POST' })
       .then(() => {
         fetchCampaigns()
         onSelectCampaign && onSelectCampaign(id)
+        console.log('campaign started/resumed', id)
       })
       .catch(err => console.error('start campaign', err))
   }
 
   const stopCampaign = id => {
+    console.log('stop campaign', id)
     fetch(`${API_BASE}/campaigns/${id}/stop`, { method: 'POST' })
       .then(() => fetchCampaigns())
+      .then(() => console.log('campaign stopped', id))
       .catch(err => console.error('stop campaign', err))
   }
 
@@ -87,7 +91,7 @@ export default function Campaigns({ accountId, sessionId, onSelectCampaign }) {
                   className="text-sm underline text-green-700"
                   onClick={() => startCampaign(c.id)}
                 >
-                  Run
+                  {c.status === 'stopped' ? 'Resume' : 'Run'}
                 </button>
               )}
             </div>
