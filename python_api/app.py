@@ -4,6 +4,8 @@ from telethon.sessions import StringSession
 from telethon.errors import SessionPasswordNeededError
 import asyncio
 import os
+import logging
+from typing import Dict, List
 
 app = Flask(__name__)
 
@@ -30,7 +32,13 @@ def handle_exception(e):
 API_ID = 27418503
 API_HASH = "911f278e674b5aaa7a4ecf14a49ea4d7"
 
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 print('Starting Python API with API_ID', API_ID)
+
+# simple in-memory stores for logs and stop flags
+CAMPAIGN_LOGS: Dict[int, List[dict]] = {}
+STOP_FLAGS: Dict[int, bool] = {}
 
 
 def get_telegram_client(session_str: str):
@@ -60,38 +68,71 @@ def execute_campaign():
     session_str = payload.get('session')
     message = payload.get('message')
     recipients = payload.get('recipients', [])
+    campaign_id = payload.get('campaign_id')
+    account_id = payload.get('account_id')
+    logger.info('execute_campaign payload %s', payload)
 
     if not session_str or not message or not recipients:
         return jsonify({'error': 'missing parameters'}), 400
+
+    CAMPAIGN_LOGS[campaign_id] = []
+    STOP_FLAGS[campaign_id] = False
 
     async def _send():
         client = get_telegram_client(session_str)
         await client.connect()
         results = []
         for phone in recipients:
+            if STOP_FLAGS.get(campaign_id):
+                logger.info('Campaign %s stop requested', campaign_id)
+                CAMPAIGN_LOGS[campaign_id].append({'status': 'stopped'})
+                break
             try:
                 await client.send_message(phone, message)
-                results.append({'phone': phone, 'status': 'sent'})
+                logger.info('sent to %s', phone)
+                entry = {'phone': phone, 'status': 'sent'}
+                results.append(entry)
+                CAMPAIGN_LOGS[campaign_id].append(entry)
                 await asyncio.sleep(1)
             except Exception as e:
-                results.append({'phone': phone, 'status': 'failed', 'error': str(e)})
+                logger.error('send error %s %s', phone, e)
+                entry = {'phone': phone, 'status': 'failed', 'error': str(e)}
+                results.append(entry)
+                CAMPAIGN_LOGS[campaign_id].append(entry)
         await client.disconnect()
         return results
 
     try:
         results = asyncio.run(_send())
     except Exception as e:
-        print('[ERROR] execute_campaign', e)
+        logger.error('execute_campaign error %s', e)
         return jsonify({'error': str(e)}), 500
 
+    logger.info('campaign %s completed with %d results', campaign_id, len(results))
     return jsonify({'status': 'completed', 'results': results})
+
+
+@app.route('/stop_campaign/<int:cid>', methods=['POST'])
+def stop_campaign(cid: int):
+    """Request stopping an active campaign."""
+    logger.info('stop_campaign %s', cid)
+    STOP_FLAGS[cid] = True
+    CAMPAIGN_LOGS.setdefault(cid, []).append({'status': 'stop_requested'})
+    return jsonify({'status': 'stopping'})
+
+
+@app.route('/campaign_logs/<int:cid>', methods=['GET'])
+def campaign_logs(cid: int):
+    """Return in-memory logs for a campaign."""
+    logger.info('campaign_logs %s', cid)
+    return jsonify({'logs': CAMPAIGN_LOGS.get(cid, [])})
 
 
 @app.route('/session/connect', methods=['POST'])
 def session_connect():
     data = request.get_json(force=True)
     phone = data.get('phone')
-    print('API /session/connect phone', phone)
+    logger.info('API /session/connect phone %s', phone)
     if not phone:
         return jsonify({'error': 'phone required'}), 400
 
@@ -102,7 +143,7 @@ def session_connect():
             result = await client.send_code_request(phone)
             session_str = client.session.save()
         except Exception as e:
-            print('API send_code error', e)
+            logger.error('API send_code error %s', e)
             await client.disconnect()
             raise
         await client.disconnect()
@@ -115,7 +156,7 @@ def session_connect():
         return jsonify({'error': str(e)}), 500
 
 
-    print('API send_code result', session_str[:10], phone_code_hash)
+    logger.info('API send_code result %s %s', session_str[:10], phone_code_hash)
     return jsonify({'session': session_str, 'phone_code_hash': phone_code_hash})
 
 
@@ -126,7 +167,7 @@ def session_verify():
     code = data.get('code')
     session_str = data.get('session')
     phone_code_hash = data.get('phone_code_hash')
-    print('API /session/verify phone', phone, 'code', code)
+    logger.info('API /session/verify phone %s code %s', phone, code)
     if not all([phone, code, session_str, phone_code_hash]):
         return jsonify({'error': 'missing parameters'}), 400
 
@@ -139,7 +180,7 @@ def session_verify():
             await client.disconnect()
             return None, 'PASSWORD_NEEDED'
         except Exception as e:
-            print('API sign_in error', e)
+            logger.error('API sign_in error %s', e)
             await client.disconnect()
             raise
         session_final = client.session.save()
@@ -152,9 +193,9 @@ def session_verify():
         return jsonify({'error': str(e)}), 500
 
     if err:
-        print('API verify error', err)
+        logger.error('API verify error %s', err)
         return jsonify({'error': err}), 400
-    print('API verify success', session_final[:10])
+    logger.info('API verify success %s', session_final[:10])
     return jsonify({'session': session_final})
 
 
@@ -166,6 +207,7 @@ def classify_text():
     data = request.get_json(force=True)
     text = data.get('text', '')
     categories = data.get('categories', [])
+    logger.info('classify_text len=%d categories=%d', len(text), len(categories))
     text_lower = text.lower()
     matched = []
     for cat in categories:

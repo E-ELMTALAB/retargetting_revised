@@ -32,6 +32,12 @@ export default function Campaigns({ accountId, sessionId, onSelectCampaign }) {
       .catch(err => console.error('start campaign', err))
   }
 
+  const stopCampaign = id => {
+    fetch(`${API_BASE}/campaigns/${id}/stop`, { method: 'POST' })
+      .then(() => fetchCampaigns())
+      .catch(err => console.error('stop campaign', err))
+  }
+
   const monitor = id => {
     onSelectCampaign && onSelectCampaign(id)
     navigate('/monitor')
@@ -60,12 +66,22 @@ export default function Campaigns({ accountId, sessionId, onSelectCampaign }) {
             <div className="flex items-center gap-4">
               <span className={`text-xs px-2 py-1 rounded ${c.status === 'running' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'}`}>{c.status}</span>
               {c.status === 'running' ? (
-                <button
-                  className="text-sm underline text-blue-600"
-                  onClick={() => monitor(c.id)}
-                >
-                  Monitor
-                </button>
+
+                <>
+                  <button
+                    className="text-sm underline text-blue-600"
+                    onClick={() => monitor(c.id)}
+                  >
+                    Monitor
+                  </button>
+                  <button
+                    className="text-sm underline text-red-600 ml-2"
+                    onClick={() => stopCampaign(c.id)}
+                  >
+                    Stop
+                  </button>
+                </>
+
               ) : (
                 <button
                   className="text-sm underline text-green-700"
