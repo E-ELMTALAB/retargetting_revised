@@ -413,11 +413,10 @@ router.post('/campaigns/:id/start', async ({ params }, env: Env) => {
   return jsonResponse({ status: 'started', result: data })
 })
 
-// Stop a running campaign
-router.post('/campaigns/:id/stop', async ({ params }, env: Env) => {
+// Stop a running campaign (POST and GET, with and without trailing slash)
+const stopCampaignHandler = async ({ params }: { params: any }, env: Env) => {
   const id = Number(params?.id || 0)
-  console.log('POST /campaigns/:id/stop', id)
-  console.log('Sending stop request to Python API for', id)
+  console.log('STOP /campaigns/:id/stop', id)
   if (!id) return jsonResponse({ error: 'invalid id' }, 400)
 
   let resp: Response
@@ -443,7 +442,11 @@ router.post('/campaigns/:id/stop', async ({ params }, env: Env) => {
   console.log('campaign', id, 'status set to stopped')
 
   return jsonResponse({ status: 'stopped', result: data })
-})
+}
+router.post('/campaigns/:id/stop', stopCampaignHandler)
+router.post('/campaigns/:id/stop/', stopCampaignHandler)
+router.get('/campaigns/:id/stop', stopCampaignHandler)
+router.get('/campaigns/:id/stop/', stopCampaignHandler)
 
 // List categories
 router.get('/categories', async (request: Request, env: Env) => {
@@ -586,8 +589,8 @@ router.get('/campaigns/:id/analytics', async ({ params }, env: Env) => {
   })
 })
 
-// Fetch logs for a campaign from the Python API
-router.get('/campaigns/:id/logs', async ({ params }, env: Env) => {
+// Fetch logs for a campaign from the Python API (GET, with and without trailing slash)
+const campaignLogsHandler = async ({ params }: { params: any }, env: Env) => {
   const id = Number(params?.id || 0)
   if (!id) return jsonResponse({ error: 'invalid id' }, 400)
   let resp: Response
@@ -600,8 +603,9 @@ router.get('/campaigns/:id/logs', async ({ params }, env: Env) => {
   const data = await resp.json().catch(() => ({}))
   if (!resp.ok) return jsonResponse({ error: 'python error', details: data }, resp.status)
   return jsonResponse(data)
-})
-
+}
+router.get('/campaigns/:id/logs', campaignLogsHandler)
+router.get('/campaigns/:id/logs/', campaignLogsHandler)
 
 // Default route
 router.all('*', () => new Response('Not Found', { status: 404 }))
