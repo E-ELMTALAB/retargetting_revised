@@ -10,9 +10,16 @@ from datetime import datetime
 app = Flask(__name__)
 
 # Global variables
-TELEGRAM_API_ID = os.environ.get('TELEGRAM_API_ID')
-TELEGRAM_API_HASH = os.environ.get('TELEGRAM_API_HASH')
+TELEGRAM_API_ID = os.environ.get('TELEGRAM_API_ID') or 27418503
+TELEGRAM_API_HASH = os.environ.get('TELEGRAM_API_HASH') or "911f278e674b5aaa7a4ecf14a49ea4d7"
 SESSION_FILE = 'me.session'
+
+# Validate API credentials
+if not TELEGRAM_API_ID or not TELEGRAM_API_HASH:
+    print("[ERROR] Telegram API credentials are missing!")
+    print(f"API_ID: {TELEGRAM_API_ID}")
+    print(f"API_HASH: {TELEGRAM_API_HASH}")
+    raise ValueError("TELEGRAM_API_ID and TELEGRAM_API_HASH must be set")
 
 # Enhanced campaign logging with timestamps and detailed information
 CAMPAIGN_LOGS = {}
@@ -36,7 +43,18 @@ def handle_exception(e):
 print(f"TELEGRAM_API_ID: {TELEGRAM_API_ID}, TELEGRAM_API_HASH: {TELEGRAM_API_HASH}")
 print(f"Session file exists: {os.path.exists(SESSION_FILE)} at {SESSION_FILE}")
 
+# Test API credentials on startup
+try:
+    test_client = get_telegram_client()
+    print("[DEBUG] API credentials validation successful")
+except Exception as e:
+    print(f"[ERROR] API credentials validation failed: {e}")
+    print("[WARNING] Server will start but campaigns may fail")
+
 def get_telegram_client(session_str=None):
+    if not TELEGRAM_API_ID or not TELEGRAM_API_HASH:
+        raise ValueError(f"Invalid API credentials: API_ID={TELEGRAM_API_ID}, API_HASH={TELEGRAM_API_HASH}")
+    
     if session_str:
         print("[DEBUG] Using provided session string.")
         return TelegramClient(StringSession(session_str), TELEGRAM_API_ID, TELEGRAM_API_HASH)
@@ -61,8 +79,23 @@ def log_campaign_event(campaign_id, event_type, details):
 
 @app.route('/health', methods=['GET'])
 def health():
-    """Simple health check endpoint."""
-    return jsonify(status='ok')
+    """Simple health check endpoint with API credential validation."""
+    try:
+        # Test API credentials
+        test_client = get_telegram_client()
+        credentials_ok = True
+        error_msg = None
+    except Exception as e:
+        credentials_ok = False
+        error_msg = str(e)
+    
+    return jsonify({
+        'status': 'ok',
+        'api_credentials': credentials_ok,
+        'api_error': error_msg,
+        'campaign_logs_count': len(CAMPAIGN_LOGS),
+        'active_campaigns': len([s for s in CAMPAIGN_STATUS.values() if s.get('status') == 'running'])
+    })
 
 @app.route('/execute_campaign', methods=['POST'])
 def execute_campaign():
@@ -282,6 +315,15 @@ def execute_campaign():
         print(f"[DEBUG] Starting asyncio.run for campaign {campaign_id}")
         results = asyncio.run(_send())
         print(f"[DEBUG] asyncio.run completed for campaign {campaign_id}, results: {results}")
+    except ValueError as e:
+        if "API credentials" in str(e) or "API ID or Hash" in str(e):
+            log_campaign_event(campaign_id, 'credential_error', {'error': str(e)})
+            CAMPAIGN_STATUS[campaign_id]['status'] = 'failed'
+            CAMPAIGN_STATUS[campaign_id]['error'] = f"API Credential Error: {str(e)}"
+            print(f'[ERROR] API credential error for campaign {campaign_id}: {e}')
+            return jsonify({'error': f'API Credential Error: {str(e)}'}), 500
+        else:
+            raise
     except Exception as e:
         log_campaign_event(campaign_id, 'campaign_error', {'error': str(e)})
         CAMPAIGN_STATUS[campaign_id]['status'] = 'failed'

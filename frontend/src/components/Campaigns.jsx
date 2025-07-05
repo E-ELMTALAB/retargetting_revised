@@ -27,10 +27,12 @@ export default function Campaigns({ accountId, sessionId, onSelectCampaign }) {
   const startCampaign = id => {
     console.log('start/resume campaign', id)
     fetch(`${API_BASE}/campaigns/${id}/start`, { method: 'POST' })
-      .then(r => {
+      .then(async r => {
         if (!r.ok) {
           console.error('start campaign failed', r.status)
-          throw new Error('start failed')
+          const errorData = await r.json().catch(() => ({}))
+          console.error('Error details:', errorData)
+          throw new Error(errorData.error || errorData.message || `start failed (${r.status})`)
         }
         return r
       })
@@ -39,7 +41,10 @@ export default function Campaigns({ accountId, sessionId, onSelectCampaign }) {
         onSelectCampaign && onSelectCampaign(id)
         console.log('campaign started/resumed', id)
       })
-      .catch(err => console.error('start campaign', err))
+      .catch(err => {
+        console.error('start campaign Error:', err.message)
+        alert(`Failed to start campaign: ${err.message}`)
+      })
   }
 
   const stopCampaign = id => {
