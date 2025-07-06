@@ -118,6 +118,15 @@ def execute_campaign():
     campaign_id = payload.get('campaign_id')
     limit = payload.get('limit')
 
+    if limit is not None:
+        try:
+            limit = int(limit)
+            if limit <= 0:
+                limit = None
+        except (TypeError, ValueError):
+            limit = None
+
+
     print(f"[DEBUG] Parsed parameters:")
     print(f"  - session_str: {session_str[:50] + '...' if session_str else 'None'}")
     print(f"  - message: {message[:100] + '...' if message else 'None'}")
@@ -144,7 +153,9 @@ def execute_campaign():
     CAMPAIGN_STATUS[campaign_id] = {
         'status': 'running',
         'started_at': datetime.now().isoformat(),
-        'total_recipients': int(limit) if isinstance(limit, (int, float, str)) and str(limit).isdigit() else 0,
+
+        'total_recipients': limit if isinstance(limit, int) else 0,
+
         'sent_count': 0,
         'failed_count': 0,
         'current_recipient': None
@@ -361,19 +372,26 @@ def execute_campaign():
             print(f"[ERROR] Error disconnecting from Telegram for campaign {campaign_id}: {e}")
         
         # Update final status
-        if not stopped and CAMPAIGN_STATUS[campaign_id].get('status') != 'stopped':
-            CAMPAIGN_STATUS[campaign_id]['status'] = 'completed'
-        CAMPAIGN_STATUS[campaign_id]['completed_at'] = datetime.now().isoformat()
         CAMPAIGN_STATUS[campaign_id]['current_recipient'] = None
-        
-        log_campaign_event(campaign_id, 'campaign_completed', {
-            'total_sent': CAMPAIGN_STATUS[campaign_id]['sent_count'],
-            'total_failed': CAMPAIGN_STATUS[campaign_id]['failed_count'],
-            'total_dialogs': total_dialogs,
-            'success_rate': f"{(CAMPAIGN_STATUS[campaign_id]['sent_count'] / max(total_dialogs, 1) * 100):.1f}%"
-        })
-        
-        print(f"[DEBUG] Campaign {campaign_id} completed: {CAMPAIGN_STATUS[campaign_id]['sent_count']} sent, {CAMPAIGN_STATUS[campaign_id]['failed_count']} failed, {total_dialogs} total dialogs")
+        CAMPAIGN_STATUS[campaign_id]['completed_at'] = datetime.now().isoformat()
+
+        if stopped or CAMPAIGN_STATUS[campaign_id].get('status') == 'stopped':
+            CAMPAIGN_STATUS[campaign_id]['status'] = 'stopped'
+            log_campaign_event(campaign_id, 'campaign_stopped', {
+                'total_sent': CAMPAIGN_STATUS[campaign_id]['sent_count'],
+                'total_failed': CAMPAIGN_STATUS[campaign_id]['failed_count'],
+                'total_dialogs': total_dialogs,
+            })
+            print(f"[DEBUG] Campaign {campaign_id} stopped: {CAMPAIGN_STATUS[campaign_id]['sent_count']} sent, {CAMPAIGN_STATUS[campaign_id]['failed_count']} failed")
+        else:
+            CAMPAIGN_STATUS[campaign_id]['status'] = 'completed'
+            log_campaign_event(campaign_id, 'campaign_completed', {
+                'total_sent': CAMPAIGN_STATUS[campaign_id]['sent_count'],
+                'total_failed': CAMPAIGN_STATUS[campaign_id]['failed_count'],
+                'total_dialogs': total_dialogs,
+                'success_rate': f"{(CAMPAIGN_STATUS[campaign_id]['sent_count'] / max(total_dialogs, 1) * 100):.1f}%"
+            })
+            print(f"[DEBUG] Campaign {campaign_id} completed: {CAMPAIGN_STATUS[campaign_id]['sent_count']} sent, {CAMPAIGN_STATUS[campaign_id]['failed_count']} failed, {total_dialogs} total dialogs")
         
         return results
 
@@ -542,14 +560,18 @@ def get_campaign_status(campaign_id):
     total_recipients = status.get('total_recipients', 0)
     sent_count = status.get('sent_count', 0)
     failed_count = status.get('failed_count', 0)
-    
-    if total_recipients > 0:
-        progress_percent = ((sent_count + failed_count) / total_recipients) * 100
+
+    processed = sent_count + failed_count
+    denom = total_recipients if total_recipients > 0 else processed
+    if denom:
+        progress_percent = (processed / denom) * 100
     else:
         progress_percent = 0
 
-    if sent_count + failed_count > 0:
-        success_rate = (sent_count / (sent_count + failed_count)) * 100
+
+    if processed > 0:
+        success_rate = (sent_count / processed) * 100
+
     else:
         success_rate = 0
     
