@@ -116,12 +116,21 @@ def execute_campaign():
     message = payload.get('message')
     account_id = payload.get('account_id')
     campaign_id = payload.get('campaign_id')
+    limit = payload.get('limit')
+    if limit is not None:
+        try:
+            limit = int(limit)
+            if limit <= 0:
+                limit = None
+        except (TypeError, ValueError):
+            limit = None
 
     print(f"[DEBUG] Parsed parameters:")
     print(f"  - session_str: {session_str[:50] + '...' if session_str else 'None'}")
     print(f"  - message: {message[:100] + '...' if message else 'None'}")
     print(f"  - account_id: {account_id}")
     print(f"  - campaign_id: {campaign_id}")
+    print(f"  - limit: {limit}")
 
     if not session_str or not message:
         print("[ERROR] Missing required parameters")
@@ -142,7 +151,7 @@ def execute_campaign():
     CAMPAIGN_STATUS[campaign_id] = {
         'status': 'running',
         'started_at': datetime.now().isoformat(),
-        'total_recipients': 0,  # Will be updated as we find dialogs
+        'total_recipients': limit if isinstance(limit, int) else 0,
         'sent_count': 0,
         'failed_count': 0,
         'current_recipient': None
@@ -179,13 +188,12 @@ def execute_campaign():
             return []
         
         results = []
-        total_dialogs = 0
         processed_dialogs = 0
         stopped = False
-        
-        print(f"[DEBUG] Starting to iterate through dialogs for campaign {campaign_id}")
-        
-        # Iterate through all dialogs (chats) that the user has
+
+        print(f"[DEBUG] Collecting recipients for campaign {campaign_id}")
+
+        recipients = []
         async for dialog in client.iter_dialogs():
             if STOP_FLAGS.get(campaign_id):
                 log_campaign_event(campaign_id, 'stop_requested', {})
@@ -194,57 +202,66 @@ def execute_campaign():
                 CAMPAIGN_STATUS[campaign_id]['completed_at'] = datetime.now().isoformat()
                 break
             try:
-                # Skip non-user dialogs (groups, channels, etc.)
                 if not dialog.is_user:
-                    print(f"[DEBUG] Skipping non-user dialog: {dialog.name}")
                     continue
-                
+
                 user = dialog.entity
-                
-                # Skip bots
                 if user.bot:
-                    print(f"[DEBUG] Skipping bot: {user.username or user.id}")
                     continue
-                
-                total_dialogs += 1
-                processed_dialogs += 1
-                
-                CAMPAIGN_STATUS[campaign_id]['current_recipient'] = f"{user.username or user.id}"
-                CAMPAIGN_STATUS[campaign_id]['total_recipients'] = total_dialogs
-                CAMPAIGN_STATUS[campaign_id]['progress'] = f"{processed_dialogs} dialogs processed"
-                
-                log_campaign_event(campaign_id, 'sending_message', {
-                    'recipient': f"{user.username or user.id}",
-                    'progress': f"{processed_dialogs} dialogs processed",
-                    'message_preview': message[:50] + '...' if len(message) > 50 else message
-                })
-                
-                print(f"[DEBUG] Sending message to dialog {processed_dialogs}: {user.username or user.id}")
-                
-                # Get user info for logging
-                user_info = f"{getattr(user, 'first_name', '')} {getattr(user, 'last_name', '')}"
-                log_campaign_event(campaign_id, 'recipient_info', {
-                    'recipient': f"{user.username or user.id}",
-                    'name': user_info.strip() or 'Unknown'
-                })
-                
-                # Send the message to this user
+
+                recipients.append(user)
+                if limit and str(limit).isdigit() and len(recipients) >= int(limit):
+                    break
+            except Exception as e:
+                print(f"[ERROR] Error while collecting recipients: {e}")
+
+        total_dialogs = len(recipients)
+        CAMPAIGN_STATUS[campaign_id]['total_recipients'] = total_dialogs
+
+        for user in recipients:
+            if STOP_FLAGS.get(campaign_id):
+                log_campaign_event(campaign_id, 'stop_requested', {})
+                stopped = True
+                CAMPAIGN_STATUS[campaign_id]['status'] = 'stopped'
+                CAMPAIGN_STATUS[campaign_id]['completed_at'] = datetime.now().isoformat()
+                break
+
+            processed_dialogs += 1
+
+            CAMPAIGN_STATUS[campaign_id]['current_recipient'] = f"{user.username or user.id}"
+            CAMPAIGN_STATUS[campaign_id]['progress'] = f"{processed_dialogs} of {len(recipients)}"
+
+            log_campaign_event(campaign_id, 'sending_message', {
+                'recipient': f"{user.username or user.id}",
+                'progress': f"{processed_dialogs} of {len(recipients)}",
+                'message_preview': message[:50] + '...' if len(message) > 50 else message
+            })
+
+            print(f"[DEBUG] Sending message to recipient {processed_dialogs}: {user.username or user.id}")
+
+            user_info = f"{getattr(user, 'first_name', '')} {getattr(user, 'last_name', '')}"
+            log_campaign_event(campaign_id, 'recipient_info', {
+                'recipient': f"{user.username or user.id}",
+                'name': user_info.strip() or 'Unknown'
+            })
+
+            try:
                 await client.send_message(user, message)
-                
+
                 CAMPAIGN_STATUS[campaign_id]['sent_count'] += 1
                 log_campaign_event(campaign_id, 'message_sent', {
                     'recipient': f"{user.username or user.id}",
                     'success': True
                 })
-                
+
                 results.append({
                     'recipient': f"{user.username or user.id}",
-                    'status': 'sent', 
+                    'status': 'sent',
                     'timestamp': datetime.now().isoformat()
                 })
-                
+
                 print(f"[DEBUG] Successfully sent message to {user.username or user.id}")
-                
+
                 # Rate limiting - delay between messages
                 await asyncio.sleep(1)
                 
@@ -351,19 +368,26 @@ def execute_campaign():
             print(f"[ERROR] Error disconnecting from Telegram for campaign {campaign_id}: {e}")
         
         # Update final status
-        if not stopped and CAMPAIGN_STATUS[campaign_id].get('status') != 'stopped':
-            CAMPAIGN_STATUS[campaign_id]['status'] = 'completed'
-        CAMPAIGN_STATUS[campaign_id]['completed_at'] = datetime.now().isoformat()
         CAMPAIGN_STATUS[campaign_id]['current_recipient'] = None
-        
-        log_campaign_event(campaign_id, 'campaign_completed', {
-            'total_sent': CAMPAIGN_STATUS[campaign_id]['sent_count'],
-            'total_failed': CAMPAIGN_STATUS[campaign_id]['failed_count'],
-            'total_dialogs': total_dialogs,
-            'success_rate': f"{(CAMPAIGN_STATUS[campaign_id]['sent_count'] / max(total_dialogs, 1) * 100):.1f}%"
-        })
-        
-        print(f"[DEBUG] Campaign {campaign_id} completed: {CAMPAIGN_STATUS[campaign_id]['sent_count']} sent, {CAMPAIGN_STATUS[campaign_id]['failed_count']} failed, {total_dialogs} total dialogs")
+        CAMPAIGN_STATUS[campaign_id]['completed_at'] = datetime.now().isoformat()
+
+        if stopped or CAMPAIGN_STATUS[campaign_id].get('status') == 'stopped':
+            CAMPAIGN_STATUS[campaign_id]['status'] = 'stopped'
+            log_campaign_event(campaign_id, 'campaign_stopped', {
+                'total_sent': CAMPAIGN_STATUS[campaign_id]['sent_count'],
+                'total_failed': CAMPAIGN_STATUS[campaign_id]['failed_count'],
+                'total_dialogs': total_dialogs,
+            })
+            print(f"[DEBUG] Campaign {campaign_id} stopped: {CAMPAIGN_STATUS[campaign_id]['sent_count']} sent, {CAMPAIGN_STATUS[campaign_id]['failed_count']} failed")
+        else:
+            CAMPAIGN_STATUS[campaign_id]['status'] = 'completed'
+            log_campaign_event(campaign_id, 'campaign_completed', {
+                'total_sent': CAMPAIGN_STATUS[campaign_id]['sent_count'],
+                'total_failed': CAMPAIGN_STATUS[campaign_id]['failed_count'],
+                'total_dialogs': total_dialogs,
+                'success_rate': f"{(CAMPAIGN_STATUS[campaign_id]['sent_count'] / max(total_dialogs, 1) * 100):.1f}%"
+            })
+            print(f"[DEBUG] Campaign {campaign_id} completed: {CAMPAIGN_STATUS[campaign_id]['sent_count']} sent, {CAMPAIGN_STATUS[campaign_id]['failed_count']} failed, {total_dialogs} total dialogs")
         
         return results
 
@@ -506,13 +530,14 @@ def get_campaign_logs(campaign_id):
     # Convert logs to the format expected by the frontend
     formatted_logs = []
     for log in logs:
-        if log['type'] in ['message_sent', 'message_failed', 'message_sent_after_flood_wait', 'message_failed_after_flood_wait']:
-            formatted_logs.append({
-                'phone': log['details'].get('recipient', 'Unknown'),  # Now contains username/id
-                'status': 'sent' if 'sent' in log['type'] else 'failed',
-                'error': log['details'].get('error'),
-                'timestamp': log['timestamp']
-            })
+        status_label = 'sent' if 'message_sent' in log['type'] else (
+            'failed' if 'failed' in log['type'] else log['type'])
+        formatted_logs.append({
+            'phone': log['details'].get('recipient', ''),
+            'status': status_label,
+            'error': log['details'].get('error'),
+            'timestamp': log['timestamp']
+        })
     
     return jsonify({
         'logs': formatted_logs,
@@ -531,11 +556,18 @@ def get_campaign_status(campaign_id):
     total_recipients = status.get('total_recipients', 0)
     sent_count = status.get('sent_count', 0)
     failed_count = status.get('failed_count', 0)
-    
-    if total_recipients > 0:
-        progress_percent = ((sent_count + failed_count) / total_recipients) * 100
+
+    processed = sent_count + failed_count
+    denom = total_recipients if total_recipients > 0 else processed
+    if denom:
+        progress_percent = (processed / denom) * 100
     else:
         progress_percent = 0
+
+    if processed > 0:
+        success_rate = (sent_count / processed) * 100
+    else:
+        success_rate = 0
     
     # Get recent activity
     recent_logs = logs[-10:] if logs else []
@@ -547,6 +579,7 @@ def get_campaign_status(campaign_id):
         'total_recipients': total_recipients,
         'sent_count': sent_count,
         'failed_count': failed_count,
+        'success_rate': f"{success_rate:.1f}%",
         'current_recipient': status.get('current_recipient'),
         'started_at': status.get('started_at'),
         'completed_at': status.get('completed_at'),
