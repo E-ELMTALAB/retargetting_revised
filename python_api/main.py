@@ -239,7 +239,7 @@ def execute_campaign():
             })
 
             try:
-                await client.send_message(user, message)
+                # await client.send_message(user, message)
 
                 CAMPAIGN_STATUS[campaign_id]['sent_count'] += 1
                 log_campaign_event(campaign_id, 'message_sent', {
