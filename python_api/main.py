@@ -229,7 +229,7 @@ def execute_campaign():
                 })
                 
                 # Send the message to this user
-                await client.send_message(user, message)
+                # await client.send_message(user, message)
                 
                 CAMPAIGN_STATUS[campaign_id]['sent_count'] += 1
                 log_campaign_event(campaign_id, 'message_sent', {
@@ -259,7 +259,7 @@ def execute_campaign():
                 await asyncio.sleep(e.seconds + 1)
                 
                 try:
-                    await client.send_message(user, message)
+                    # await client.send_message(user, message)
                     CAMPAIGN_STATUS[campaign_id]['sent_count'] += 1
                     log_campaign_event(campaign_id, 'message_sent_after_flood_wait', {
                         'recipient': f"{user.username or user.id}",

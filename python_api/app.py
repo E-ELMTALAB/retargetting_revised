@@ -105,7 +105,7 @@ def execute_campaign():
                 CAMPAIGN_STATUS[campaign_id]['status'] = 'stopped'
                 break
             try:
-                await client.send_message(phone, message)
+                # await client.send_message(phone, message)
                 logger.info('sent to %s', phone)
                 entry = {'phone': phone, 'status': 'sent'}
                 results.append(entry)
