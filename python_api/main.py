@@ -117,6 +117,7 @@ def execute_campaign():
     account_id = payload.get('account_id')
     campaign_id = payload.get('campaign_id')
     limit = payload.get('limit')
+
     if limit is not None:
         try:
             limit = int(limit)
@@ -124,6 +125,7 @@ def execute_campaign():
                 limit = None
         except (TypeError, ValueError):
             limit = None
+
 
     print(f"[DEBUG] Parsed parameters:")
     print(f"  - session_str: {session_str[:50] + '...' if session_str else 'None'}")
@@ -151,7 +153,9 @@ def execute_campaign():
     CAMPAIGN_STATUS[campaign_id] = {
         'status': 'running',
         'started_at': datetime.now().isoformat(),
+
         'total_recipients': limit if isinstance(limit, int) else 0,
+
         'sent_count': 0,
         'failed_count': 0,
         'current_recipient': None
@@ -276,7 +280,7 @@ def execute_campaign():
                 await asyncio.sleep(e.seconds + 1)
                 
                 try:
-                    await client.send_message(user, message)
+                    # await client.send_message(user, message)
                     CAMPAIGN_STATUS[campaign_id]['sent_count'] += 1
                     log_campaign_event(campaign_id, 'message_sent_after_flood_wait', {
                         'recipient': f"{user.username or user.id}",
@@ -564,8 +568,10 @@ def get_campaign_status(campaign_id):
     else:
         progress_percent = 0
 
+
     if processed > 0:
         success_rate = (sent_count / processed) * 100
+
     else:
         success_rate = 0
     
