@@ -1,71 +1,84 @@
-import React, { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import CampaignForm from './CampaignForm'
+import React, { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import CampaignForm from "./CampaignForm";
 
 const API_BASE = (
   import.meta.env.VITE_API_BASE ||
-  'https://retargetting-worker.elmtalabx.workers.dev'
-).replace(/\/$/, '')
+  "https://retargetting-worker.elmtalabx.workers.dev"
+).replace(/\/$/, "");
 
 export default function Campaigns({ accountId, sessionId, onSelectCampaign }) {
-  const [campaigns, setCampaigns] = useState([])
-  const [showForm, setShowForm] = useState(false)
-  const navigate = useNavigate()
+  const [campaigns, setCampaigns] = useState([]);
+  const [showForm, setShowForm] = useState(false);
+  const navigate = useNavigate();
 
   const fetchCampaigns = () => {
-    if (!accountId) return
+    if (!accountId) return;
     fetch(`${API_BASE}/campaigns?account_id=${accountId}`)
-      .then(r => r.json())
-      .then(d => setCampaigns(d.campaigns || []))
-      .catch(e => console.error('fetch campaigns', e))
-  }
+      .then((r) => r.json())
+      .then((d) => setCampaigns(d.campaigns || []))
+      .catch((e) => console.error("fetch campaigns", e));
+  };
 
   useEffect(() => {
-    fetchCampaigns()
-  }, [accountId])
+    fetchCampaigns();
+  }, [accountId]);
 
-  const startCampaign = id => {
-    console.log('start/resume campaign', id)
-    fetch(`${API_BASE}/campaigns/${id}/start`, { method: 'POST' })
-      .then(async r => {
+  const startCampaign = (id) => {
+    console.log("start/resume campaign", id);
+    const limitStr = prompt(
+      "How many users should this campaign message? Leave blank for all",
+    );
+    const limit = limitStr ? parseInt(limitStr, 10) : null;
+    const options = {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+    };
+    if (limit) options.body = JSON.stringify({ limit });
+    fetch(`${API_BASE}/campaigns/${id}/start`, options)
+      .then(async (r) => {
         if (!r.ok) {
-          console.error('start campaign failed', r.status)
-          const errorData = await r.json().catch(() => ({}))
-          console.error('Error details:', errorData)
-          throw new Error(errorData.error || errorData.message || `start failed (${r.status})`)
+          console.error("start campaign failed", r.status);
+          const errorData = await r.json().catch(() => ({}));
+          console.error("Error details:", errorData);
+          throw new Error(
+            errorData.error ||
+              errorData.message ||
+              `start failed (${r.status})`,
+          );
         }
-        return r
+        return r;
       })
       .then(() => {
-        fetchCampaigns()
-        onSelectCampaign && onSelectCampaign(id)
-        console.log('campaign started/resumed', id)
+        fetchCampaigns();
+        onSelectCampaign && onSelectCampaign(id);
+        console.log("campaign started/resumed", id);
       })
-      .catch(err => {
-        console.error('start campaign Error:', err.message)
-        alert(`Failed to start campaign: ${err.message}`)
-      })
-  }
+      .catch((err) => {
+        console.error("start campaign Error:", err.message);
+        alert(`Failed to start campaign: ${err.message}`);
+      });
+  };
 
-  const stopCampaign = id => {
-    console.log('stop campaign', id)
-    fetch(`${API_BASE}/campaigns/${id}/stop`, { method: 'POST' })
-      .then(r => {
+  const stopCampaign = (id) => {
+    console.log("stop campaign", id);
+    fetch(`${API_BASE}/campaigns/${id}/stop`, { method: "POST" })
+      .then((r) => {
         if (!r.ok) {
-          console.error('stop campaign failed', r.status)
-          throw new Error('stop failed')
+          console.error("stop campaign failed", r.status);
+          throw new Error("stop failed");
         }
-        return r
+        return r;
       })
       .then(() => fetchCampaigns())
-      .then(() => console.log('campaign stopped', id))
-      .catch(err => console.error('stop campaign', err))
-  }
+      .then(() => console.log("campaign stopped", id))
+      .catch((err) => console.error("stop campaign", err));
+  };
 
-  const monitor = id => {
-    onSelectCampaign && onSelectCampaign(id)
-    navigate('/monitor')
-  }
+  const monitor = (id) => {
+    onSelectCampaign && onSelectCampaign(id);
+    navigate("/monitor");
+  };
 
   return (
     <div className="p-6 relative">
@@ -78,19 +91,24 @@ export default function Campaigns({ accountId, sessionId, onSelectCampaign }) {
         +
       </button>
       <ul className="space-y-3">
-        {campaigns.map(c => (
+        {campaigns.map((c) => (
           <li
             key={c.id}
             className="flex items-center justify-between bg-white p-4 rounded shadow border"
           >
             <div>
               <p className="font-medium">Campaign #{c.id}</p>
-              <p className="text-sm text-gray-600">{c.message_text.slice(0, 60)}...</p>
+              <p className="text-sm text-gray-600">
+                {c.message_text.slice(0, 60)}...
+              </p>
             </div>
             <div className="flex items-center gap-4">
-              <span className={`text-xs px-2 py-1 rounded ${c.status === 'running' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'}`}>{c.status}</span>
-              {c.status === 'running' ? (
-
+              <span
+                className={`text-xs px-2 py-1 rounded ${c.status === "running" ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-700"}`}
+              >
+                {c.status}
+              </span>
+              {c.status === "running" ? (
                 <>
                   <button
                     className="px-2 py-1 text-sm bg-blue-500 text-white rounded"
@@ -105,13 +123,12 @@ export default function Campaigns({ accountId, sessionId, onSelectCampaign }) {
                     Stop
                   </button>
                 </>
-
               ) : (
                 <button
                   className="px-2 py-1 text-sm bg-green-600 text-white rounded"
                   onClick={() => startCampaign(c.id)}
                 >
-                  {c.status === 'stopped' ? 'Resume' : 'Run'}
+                  {c.status === "stopped" ? "Resume" : "Run"}
                 </button>
               )}
             </div>
@@ -123,12 +140,12 @@ export default function Campaigns({ accountId, sessionId, onSelectCampaign }) {
           accountId={accountId}
           sessionId={sessionId}
           onSaved={() => {
-            setShowForm(false)
-            fetchCampaigns()
+            setShowForm(false);
+            fetchCampaigns();
           }}
           onClose={() => setShowForm(false)}
         />
       )}
     </div>
-  )
+  );
 }
