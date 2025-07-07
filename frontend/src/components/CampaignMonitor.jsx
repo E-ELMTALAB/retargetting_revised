@@ -15,6 +15,7 @@ export default function CampaignMonitor({ accountId, campaignId, onSelectCampaig
   const [error, setError] = useState(null)
   const [showEditModal, setShowEditModal] = useState(false)
   const [editingCampaign, setEditingCampaign] = useState(null)
+  const initialMount = React.useRef(true)
 
   const stopCampaign = async (id) => {
     setLoading(true)
@@ -123,6 +124,15 @@ export default function CampaignMonitor({ accountId, campaignId, onSelectCampaig
       console.error('fetch campaign logs error:', e)
     }
   }
+
+  useEffect(() => {
+    if (initialMount.current) {
+      setActiveId(campaignId || null)
+      initialMount.current = false
+    }
+    // Do not update activeId from campaignId after mount
+    // eslint-disable-next-line
+  }, [])
 
   useEffect(() => {
     if (!accountId) return
