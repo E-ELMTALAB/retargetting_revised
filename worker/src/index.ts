@@ -68,6 +68,7 @@ CREATE TABLE IF NOT EXISTS categories (
     name TEXT,
     keywords_json TEXT,
     description TEXT,
+    regex_pattern TEXT,
     sample_chats_json TEXT,
     FOREIGN KEY (account_id) REFERENCES accounts(id)
 );
@@ -116,6 +117,24 @@ async function ensureSchema(db: D1Database) {
         await db.exec("ALTER TABLE accounts ADD COLUMN password_hash TEXT");
       } catch (e) {
         console.log("alter accounts error", e);
+      }
+    }
+
+    const catColsRes: any = await db
+      .prepare("PRAGMA table_info(categories)")
+      .all();
+    const catCols = Array.isArray(catColsRes)
+      ? catColsRes
+      : catColsRes.results || [];
+    const catNames = catCols.map((c: any) => c.name);
+    if (!catNames.includes("regex_pattern")) {
+      console.log("adding regex_pattern column");
+      try {
+        await db.exec(
+          "ALTER TABLE categories ADD COLUMN regex_pattern TEXT",
+        );
+      } catch (e) {
+        console.log("alter categories error", e);
       }
     }
   } catch (err) {
@@ -664,7 +683,7 @@ router.get("/categories", async (request: Request, env: Env) => {
 
   console.log("GET /categories account", accountId);
   const { results } = await env.DB.prepare(
-    "SELECT id, name, keywords_json, description, sample_chats_json FROM categories WHERE account_id=?1",
+    "SELECT id, name, keywords_json, description, regex_pattern, sample_chats_json FROM categories WHERE account_id=?1",
   )
     .bind(accountId)
     .all();
@@ -677,19 +696,26 @@ router.get("/categories", async (request: Request, env: Env) => {
 
 // Create category
 router.post("/categories", async (request: Request, env: Env) => {
-  const { name, keywords, description, examples } =
+  const { name, keywords, description, regex, examples } =
     (await request.json()) as any;
   const accountId = 1;
-  console.log("POST /categories", { name, keywords, description, examples });
+  console.log("POST /categories", {
+    name,
+    keywords,
+    description,
+    regex,
+    examples,
+  });
 
   const res = await env.DB.prepare(
-    "INSERT INTO categories (account_id, name, keywords_json, description, sample_chats_json) VALUES (?1, ?2, ?3, ?4, ?5)",
+    "INSERT INTO categories (account_id, name, keywords_json, description, regex_pattern, sample_chats_json) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
   )
     .bind(
       accountId,
       name,
       JSON.stringify(keywords || []),
       description || "",
+      regex || null,
       JSON.stringify(examples || []),
     )
 
@@ -699,6 +725,42 @@ router.post("/categories", async (request: Request, env: Env) => {
   return new Response(JSON.stringify({ id: res.lastRowId }), {
     headers: { "Content-Type": "application/json" },
   });
+});
+
+// Update category
+router.put("/categories/:id", async ({ params, request }: any, env: Env) => {
+  const id = Number(params?.id || 0);
+  if (!id) return jsonResponse({ error: "invalid id" }, 400);
+  const { name, keywords, description, regex, examples } =
+    (await request.json()) as any;
+  const accountId = 1;
+  await env.DB.prepare(
+    "UPDATE categories SET name=?1, keywords_json=?2, description=?3, regex_pattern=?4, sample_chats_json=?5 WHERE id=?6 AND account_id=?7",
+  )
+    .bind(
+      name,
+      JSON.stringify(keywords || []),
+      description || "",
+      regex || null,
+      JSON.stringify(examples || []),
+      id,
+      accountId,
+    )
+    .run();
+  return jsonResponse({ id });
+});
+
+// Delete category
+router.delete("/categories/:id", async ({ params }: any, env: Env) => {
+  const id = Number(params?.id || 0);
+  if (!id) return jsonResponse({ error: "invalid id" }, 400);
+  const accountId = 1;
+  await env.DB.prepare(
+    "DELETE FROM categories WHERE id=?1 AND account_id=?2",
+  )
+    .bind(id, accountId)
+    .run();
+  return jsonResponse({ id, deleted: true });
 });
 
 // Analytics summary

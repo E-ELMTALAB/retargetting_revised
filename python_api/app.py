@@ -8,6 +8,7 @@ import logging
 import threading
 from typing import Dict, List, Any
 from datetime import datetime
+import re
 
 app = Flask(__name__)
 
@@ -263,7 +264,7 @@ def session_verify():
 @app.route('/classify', methods=['POST'])
 def classify_text():
 
-    """Classify text based on provided categories and keywords or examples."""
+    """Classify text based on keywords, descriptions or regex rules."""
 
     data = request.get_json(force=True)
     text = data.get('text', '')
@@ -274,14 +275,33 @@ def classify_text():
     for cat in categories:
         name = cat.get('name')
         kws = cat.get('keywords', [])
-
+        description = cat.get('description', '')
+        regex = cat.get('regex')
         examples = cat.get('examples', [])
+
         found = False
         for kw in kws:
             if kw.lower() in text_lower:
                 matched.append(name)
                 found = True
                 break
+
+        if not found and regex:
+            try:
+                if re.search(regex, text, re.IGNORECASE):
+                    matched.append(name)
+                    found = True
+            except re.error:
+                pass
+
+        if not found and description:
+            desc_words = re.findall(r"\w+", description.lower())
+            for w in desc_words:
+                if w and w in text_lower:
+                    matched.append(name)
+                    found = True
+                    break
+
         if not found:
             for ex in examples:
                 if ex.lower() in text_lower:

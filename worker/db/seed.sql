@@ -30,11 +30,11 @@ VALUES
   (1, 5, 5, 200.0, '["Great deal today"]');
 
 -- Category definitions
-INSERT INTO categories (account_id, name, keywords_json, description, sample_chats_json)
+INSERT INTO categories (account_id, name, keywords_json, description, regex_pattern, sample_chats_json)
 VALUES
-  (1, 'Buyer', '["bought","purchased"]', 'Users who recently purchased', '["I bought this","Thanks for the product"]'),
-  (1, 'Browser', '["looking","interested"]', 'Potential customers browsing products', '["I am looking at your site","Just checking"]'),
-  (1, 'Refund Risk', '["refund","return"]', 'Users asking about refunds', '["I want a refund","What is your return policy?"]');
+  (1, 'Buyer', '["bought","purchased"]', 'Users who recently purchased', NULL, '["I bought this","Thanks for the product"]'),
+  (1, 'Browser', '["looking","interested"]', 'Potential customers browsing products', NULL, '["I am looking at your site","Just checking"]'),
+  (1, 'Refund Risk', '["refund","return"]', 'Users asking about refunds', '.*refund.*', '["I want a refund","What is your return policy?"]');
 
 -- Customer category assignments
 INSERT INTO customer_categories (account_id, user_phone, category, confidence_score)
