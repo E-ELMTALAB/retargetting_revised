@@ -101,19 +101,11 @@ export default function CampaignMonitor({ accountId, campaignId, onSelectCampaig
       const response = await fetch(`${API_BASE}/campaigns/${campaignId}/logs`)
       const data = await response.json()
       console.log('Campaign logs data:', data)
-      
       if (response.ok) {
         const formattedLogs = Array.isArray(data.logs) ? data.logs : []
         setLogs(formattedLogs)
-        
-        // Only use logs for progress if status endpoint is missing or invalid
-        if ((!campaignStatus || !campaignStatus.total_recipients || campaignStatus.total_recipients === 0) && formattedLogs.length > 0) {
-          const sent = formattedLogs.filter(l => l.status === 'sent').length
-          const total = formattedLogs.length
-          setProgress(total > 0 ? Math.round((sent / total) * 100) : 0)
-        }
-        
-        // Update errors from logs
+        // Remove any logic that sets progress from logs
+        // Only update errors from logs
         const failedLogs = formattedLogs.filter(l => l.status !== 'sent')
         const errorMessages = failedLogs.map(l => `${l.phone}: ${l.error || 'failed'}`)
         setErrors(errorMessages)
