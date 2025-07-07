@@ -56,6 +56,7 @@ CREATE TABLE categories (
     name TEXT,
     keywords_json TEXT,
     description TEXT,
+    regex_pattern TEXT,
     sample_chats_json TEXT,
 
     FOREIGN KEY (account_id) REFERENCES accounts(id)
