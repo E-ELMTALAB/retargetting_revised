@@ -4,12 +4,12 @@ const API_BASE =
   import.meta.env.VITE_API_BASE ||
   'https://retargetting-worker.elmtalabx.workers.dev'
 
-export default function CampaignMonitor({ accountId, campaignId, onSelectCampaign }) {
+export default function CampaignMonitor({ accountId }) {
   const [progress, setProgress] = useState(0)
   const [errors, setErrors] = useState([])
   const [logs, setLogs] = useState([])
   const [running, setRunning] = useState([])
-  const [activeId, setActiveId] = useState(campaignId || null)
+  const [activeId, setActiveId] = useState(null)
   const [campaignStatus, setCampaignStatus] = useState({})
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
@@ -56,7 +56,6 @@ export default function CampaignMonitor({ accountId, campaignId, onSelectCampaig
         // If no active campaign is selected and there are campaigns, select the first one
         if (!activeId && allCampaigns.length > 0) {
           setActiveId(allCampaigns[0].id)
-          onSelectCampaign && onSelectCampaign(allCampaigns[0].id)
         }
       } else {
         setError(`Failed to fetch campaigns: ${data.error || 'Unknown error'}`)
@@ -119,11 +118,9 @@ export default function CampaignMonitor({ accountId, campaignId, onSelectCampaig
 
   useEffect(() => {
     if (initialMount.current) {
-      setActiveId(campaignId || null)
+      setActiveId(null)
       initialMount.current = false
     }
-    // Do not update activeId from campaignId after mount
-    // eslint-disable-next-line
   }, [])
 
   useEffect(() => {
@@ -245,7 +242,6 @@ export default function CampaignMonitor({ accountId, campaignId, onSelectCampaig
                 key={c.id}
                 onClick={() => {
                   setActiveId(c.id)
-                  onSelectCampaign && onSelectCampaign(c.id)
                 }}
                 className={`cursor-pointer p-2 border rounded ${c.id === activeId ? 'bg-blue-50 border-blue-300' : 'hover:bg-gray-50'}`}
               >
