@@ -125,12 +125,7 @@ export default function CampaignMonitor({ accountId, campaignId, onSelectCampaig
   }
 
   useEffect(() => {
-    setActiveId(campaignId || null)
-  }, [campaignId])
-
-  useEffect(() => {
     if (!accountId) return
-    
     fetchRunningCampaigns()
     const interval = setInterval(fetchRunningCampaigns, 5000)
     return () => clearInterval(interval)
@@ -138,15 +133,10 @@ export default function CampaignMonitor({ accountId, campaignId, onSelectCampaig
 
   useEffect(() => {
     if (!activeId) return
-    
-    // Fetch initial data
     fetchCampaignStatus(activeId)
     fetchCampaignLogs(activeId)
-    
-    // Set up polling
     const statusInterval = setInterval(() => fetchCampaignStatus(activeId), 2000)
     const logsInterval = setInterval(() => fetchCampaignLogs(activeId), 3000)
-    
     return () => {
       clearInterval(statusInterval)
       clearInterval(logsInterval)
