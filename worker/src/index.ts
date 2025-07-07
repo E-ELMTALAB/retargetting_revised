@@ -815,42 +815,22 @@ router.get("/campaigns/:id/analytics", async ({ params }, env: Env) => {
 
 // Fetch logs for a campaign from the Python API (GET, with and without trailing slash)
 const campaignLogsHandler = async ({ params }: { params: any }, env: Env) => {
-  const logs: string[] = [];
   const id = Number(params?.id || 0);
-  logs.push(`[LOGS] Called for campaign id: ${id}`);
   if (!id) {
-    logs.push("[LOGS] Invalid id");
-    return jsonResponse({ error: "invalid id", logs }, 400);
+    return jsonResponse({ error: "invalid id" }, 400);
   }
   let resp: Response;
   try {
-    logs.push(
-      `[LOGS] Fetching logs from Python API: ${env.PYTHON_API_URL}/campaign_logs/${id}`,
-    );
     resp = await fetch(`${env.PYTHON_API_URL}/campaign_logs/${id}`);
-    logs.push(`[LOGS] Python API response status: ${resp.status}`);
   } catch (err) {
-    logs.push(
-      `[LOGS] Fetch error: ${err && ((err as any).stack || (err as any).message || err.toString())}`,
-    );
-    return jsonResponse({ error: "api request failed", logs }, 500);
+    return jsonResponse({ error: "api request failed" }, 500);
   }
-  const data = await resp.json().catch((e) => {
-    logs.push(`[LOGS] JSON parse error: ${e}`);
-    return {};
-  });
-  logs.push(`[LOGS] Python API response data: ${JSON.stringify(data)}`);
+  const data = await resp.json().catch(() => ({}));
   if (!resp.ok) {
-    logs.push("[LOGS] Python API returned error");
-    return jsonResponse(
-      { error: "python error", details: data, logs },
-      resp.status,
-    );
+    return jsonResponse({ error: "python error", details: data }, resp.status);
   }
-  logs.push(`[LOGS] Success for campaign ${id}`);
-  const safeData =
-    data && typeof data === "object" && !Array.isArray(data) ? data : { data };
-  return jsonResponse({ ...safeData, logs });
+  // Only forward the actual logs/status from Python API
+  return jsonResponse(data);
 };
 router.get("/campaigns/:id/logs", campaignLogsHandler);
 router.get("/campaigns/:id/logs/", campaignLogsHandler);

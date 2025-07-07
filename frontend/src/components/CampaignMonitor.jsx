@@ -74,7 +74,12 @@ export default function CampaignMonitor({ accountId, campaignId, onSelectCampaig
       
       if (response.ok) {
         setCampaignStatus(data)
-        setProgress(data.progress_percent || 0)
+        // Defensive: Only set progress if total_recipients > 0
+        if (typeof data.progress_percent === 'number' && data.total_recipients > 0) {
+          setProgress(data.progress_percent)
+        } else {
+          setProgress(0)
+        }
         
         // Update errors from status
         if (data.failed_count > 0) {
@@ -97,16 +102,14 @@ export default function CampaignMonitor({ accountId, campaignId, onSelectCampaig
       console.log('Campaign logs data:', data)
       
       if (response.ok) {
-        const formattedLogs = data.logs || []
+        const formattedLogs = Array.isArray(data.logs) ? data.logs : []
         setLogs(formattedLogs)
         
-        // Calculate progress from logs if status endpoint fails
-        if (formattedLogs.length > 0) {
+        // Only use logs for progress if status endpoint is missing or invalid
+        if ((!campaignStatus || !campaignStatus.total_recipients || campaignStatus.total_recipients === 0) && formattedLogs.length > 0) {
           const sent = formattedLogs.filter(l => l.status === 'sent').length
           const total = formattedLogs.length
-          if (total > 0) {
-            setProgress(Math.round((sent / total) * 100))
-          }
+          setProgress(total > 0 ? Math.round((sent / total) * 100) : 0)
         }
         
         // Update errors from logs
@@ -306,15 +309,18 @@ export default function CampaignMonitor({ accountId, campaignId, onSelectCampaig
           <div className="flex-1 space-y-4">
             <div>
               <h3 className="font-medium mb-1">Live Sending Status</h3>
-              <div className="w-full bg-gray-200 h-4 rounded overflow-hidden">
+              <div className="w-full bg-gray-200 rounded-full h-4 mb-4">
                 <div
-                  className="bg-green-500 h-full transition-all duration-500"
-                  style={{ width: `${progress}%` }}
+                  className="bg-blue-600 h-4 rounded-full transition-all duration-500"
+                  style={{ width: `${progress || 0}%` }}
                 />
               </div>
 
+              <p className="text-xs text-gray-500 mb-2">
+                {progress > 0 ? `${progress}% complete` : 'Not started'}
+              </p>
+
               <div className="flex items-center justify-between mt-1">
-                <p className="text-sm">{progress}% complete</p>
                 <div className="text-xs text-gray-500">
                   {campaignStatus.sent_count || 0} sent, {campaignStatus.failed_count || 0} failed
                 </div>
