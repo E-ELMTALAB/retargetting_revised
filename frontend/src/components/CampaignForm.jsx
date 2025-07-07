@@ -19,6 +19,11 @@ export default function CampaignForm({ accountId, sessionId, onSaved, onClose })
   const [status, setStatus] = useState('')
   const [errors, setErrors] = useState({})
   const quillRef = useRef(null)
+  const [chatStartTime, setChatStartTime] = useState('')
+  const [chatStartTimeCmp, setChatStartTimeCmp] = useState('after')
+  const [newestChatTime, setNewestChatTime] = useState('')
+  const [newestChatTimeCmp, setNewestChatTimeCmp] = useState('after')
+  const [sleepTime, setSleepTime] = useState('1')
 
   const insertPlaceholder = ph => {
     const quill = quillRef.current.getEditor()
@@ -43,6 +48,11 @@ export default function CampaignForm({ accountId, sessionId, onSaved, onClose })
           account_id: accountId,
           telegram_session_id: sessionId,
           message_text: message,
+          chat_start_time: chatStartTime || undefined,
+          chat_start_time_cmp: chatStartTimeCmp,
+          newest_chat_time: newestChatTime || undefined,
+          newest_chat_time_cmp: newestChatTimeCmp,
+          sleep_time: sleepTime,
         }),
       })
       const data = await resp.json().catch(() => ({}))
@@ -158,6 +168,33 @@ export default function CampaignForm({ accountId, sessionId, onSaved, onClose })
             {errors.trackingUrl && (
               <p className="text-red-600 text-sm">{errors.trackingUrl}</p>
             )}
+          </div>
+
+          <div className="space-y-1">
+            <label className="block font-semibold">Chat Start Time</label>
+            <div className="flex gap-2">
+              <select value={chatStartTimeCmp} onChange={e => setChatStartTimeCmp(e.target.value)} className="border rounded p-2">
+                <option value="after">After</option>
+                <option value="before">Before</option>
+              </select>
+              <input type="datetime-local" value={chatStartTime} onChange={e => setChatStartTime(e.target.value)} className="border rounded p-2 flex-1" />
+            </div>
+          </div>
+
+          <div className="space-y-1">
+            <label className="block font-semibold">Newest Chat Time</label>
+            <div className="flex gap-2">
+              <select value={newestChatTimeCmp} onChange={e => setNewestChatTimeCmp(e.target.value)} className="border rounded p-2">
+                <option value="after">After</option>
+                <option value="before">Before</option>
+              </select>
+              <input type="datetime-local" value={newestChatTime} onChange={e => setNewestChatTime(e.target.value)} className="border rounded p-2 flex-1" />
+            </div>
+          </div>
+
+          <div className="space-y-1">
+            <label className="block font-semibold">Sleep Time (seconds between messages)</label>
+            <input type="number" min="0" step="0.1" value={sleepTime} onChange={e => setSleepTime(e.target.value)} className="border rounded p-2 w-full" />
           </div>
 
           <button

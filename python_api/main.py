@@ -27,6 +27,8 @@ CAMPAIGN_LOGS = {}
 CAMPAIGN_STATUS = {}  # Track campaign status
 STOP_FLAGS = {}
 CAMPAIGN_THREADS = {}
+CAMPAIGN_DATA = {}  # Store campaign configuration data
+SENT_USERS = {}  # Track users that have been sent messages per campaign
 
 @app.after_request
 def add_cors_headers(response):
@@ -117,6 +119,17 @@ def execute_campaign():
     account_id = payload.get('account_id')
     campaign_id = payload.get('campaign_id')
     limit = payload.get('limit')
+    chat_start_time = payload.get('chat_start_time')
+    chat_start_time_cmp = payload.get('chat_start_time_cmp', 'after')  # 'after' or 'before'
+    newest_chat_time = payload.get('newest_chat_time')
+    newest_chat_time_cmp = payload.get('newest_chat_time_cmp', 'after')  # 'after' or 'before'
+    sleep_time = payload.get('sleep_time', 1)
+    try:
+        sleep_time = float(sleep_time)
+        if sleep_time < 0:
+            sleep_time = 1
+    except (TypeError, ValueError):
+        sleep_time = 1
 
     if limit is not None:
         try:
@@ -133,6 +146,11 @@ def execute_campaign():
     print(f"  - account_id: {account_id}")
     print(f"  - campaign_id: {campaign_id}")
     print(f"  - limit: {limit}")
+    print(f"  - chat_start_time: {chat_start_time}")
+    print(f"  - chat_start_time_cmp: {chat_start_time_cmp}")
+    print(f"  - newest_chat_time: {newest_chat_time}")
+    print(f"  - newest_chat_time_cmp: {newest_chat_time_cmp}")
+    print(f"  - sleep_time: {sleep_time}")
 
     if not session_str or not message:
         print("[ERROR] Missing required parameters")
@@ -150,17 +168,32 @@ def execute_campaign():
         'session_preview': session_str[:20] + '...' if session_str else 'None'
     })
 
+    # Store campaign data for editing and resuming
+    CAMPAIGN_DATA[campaign_id] = {
+        'message': message,
+        'limit': limit,
+        'account_id': account_id,
+        'session': session_str,
+        'created_at': datetime.now().isoformat(),
+        'chat_start_time': chat_start_time,
+        'chat_start_time_cmp': chat_start_time_cmp,
+        'newest_chat_time': newest_chat_time,
+        'newest_chat_time_cmp': newest_chat_time_cmp,
+        'sleep_time': sleep_time
+    }
+
     CAMPAIGN_STATUS[campaign_id] = {
         'status': 'running',
         'started_at': datetime.now().isoformat(),
-
         'total_recipients': limit if isinstance(limit, int) else 0,
-
         'sent_count': 0,
         'failed_count': 0,
         'current_recipient': None
     }
     STOP_FLAGS[campaign_id] = False
+    
+    # Initialize sent users tracking for this campaign
+    SENT_USERS[campaign_id] = set()
 
     async def _send():
         print(f"[DEBUG] Starting _send function for campaign {campaign_id}")
@@ -213,6 +246,37 @@ def execute_campaign():
                 if user.bot:
                     continue
 
+                # Get chat start and newest message times
+                chat_start = getattr(dialog, 'date', None)
+                last_message = getattr(dialog, 'message', None)
+                last_message_time = getattr(last_message, 'date', None) if last_message else None
+
+                # Filter by chat_start_time
+                if chat_start_time:
+                    try:
+                        chat_start_dt = chat_start
+                        filter_dt = datetime.fromisoformat(chat_start_time)
+                        if chat_start_dt:
+                            if chat_start_time_cmp == 'after' and chat_start_dt < filter_dt:
+                                continue
+                            if chat_start_time_cmp == 'before' and chat_start_dt > filter_dt:
+                                continue
+                    except Exception as e:
+                        print(f"[ERROR] chat_start_time filter: {e}")
+
+                # Filter by newest_chat_time
+                if newest_chat_time:
+                    try:
+                        newest_dt = last_message_time
+                        filter_dt = datetime.fromisoformat(newest_chat_time)
+                        if newest_dt:
+                            if newest_chat_time_cmp == 'after' and newest_dt < filter_dt:
+                                continue
+                            if newest_chat_time_cmp == 'before' and newest_dt > filter_dt:
+                                continue
+                    except Exception as e:
+                        print(f"[ERROR] newest_chat_time filter: {e}")
+
                 recipients.append(user)
                 if limit and str(limit).isdigit() and len(recipients) >= int(limit):
                     break
@@ -252,6 +316,10 @@ def execute_campaign():
             try:
                 # await client.send_message(user, message)
 
+                # Mark user as sent
+                user_id = str(user.id)
+                SENT_USERS[campaign_id].add(user_id)
+
                 CAMPAIGN_STATUS[campaign_id]['sent_count'] += 1
                 log_campaign_event(campaign_id, 'message_sent', {
                     'recipient': f"{user.username or user.id}",
@@ -267,7 +335,7 @@ def execute_campaign():
                 print(f"[DEBUG] Successfully sent message to {user.username or user.id}")
 
                 # Rate limiting - delay between messages
-                await asyncio.sleep(1)
+                await asyncio.sleep(sleep_time)
                 
             except errors.FloodWaitError as e:
                 log_campaign_event(campaign_id, 'flood_wait', {
@@ -609,6 +677,259 @@ def stop_campaign(campaign_id):
     STOP_FLAGS[campaign_id] = True
     
     return jsonify({"status": "stopped", "campaign_id": campaign_id})
+
+@app.route('/campaign_data/<int:campaign_id>', methods=['GET'])
+def get_campaign_data(campaign_id):
+    """Get campaign configuration data for editing."""
+    campaign_data = CAMPAIGN_DATA.get(campaign_id, {})
+    status = CAMPAIGN_STATUS.get(campaign_id, {})
+    
+    return jsonify({
+        'campaign_id': campaign_id,
+        'data': campaign_data,
+        'status': status.get('status', 'unknown'),
+        'sent_count': status.get('sent_count', 0),
+        'failed_count': status.get('failed_count', 0),
+        'total_recipients': status.get('total_recipients', 0)
+    })
+
+@app.route('/update_campaign/<int:campaign_id>', methods=['POST'])
+def update_campaign(campaign_id):
+    """Update campaign configuration data."""
+    try:
+        payload = request.get_json(force=True)
+        print(f"[DEBUG] Updating campaign {campaign_id} with data: {payload}")
+        
+        # Store the updated campaign data
+        CAMPAIGN_DATA[campaign_id] = {
+            'message': payload.get('message'),
+            'limit': payload.get('limit'),
+            'account_id': payload.get('account_id'),
+            'session': payload.get('session'),
+            'updated_at': datetime.now().isoformat()
+        }
+        
+        # Update campaign status to indicate it's been modified
+        if campaign_id in CAMPAIGN_STATUS:
+            CAMPAIGN_STATUS[campaign_id]['modified'] = True
+            CAMPAIGN_STATUS[campaign_id]['modified_at'] = datetime.now().isoformat()
+        
+        log_campaign_event(campaign_id, 'campaign_updated', {
+            'message_preview': payload.get('message', '')[:100] + '...' if payload.get('message') else '',
+            'limit': payload.get('limit')
+        })
+        
+        return jsonify({'status': 'updated', 'campaign_id': campaign_id})
+        
+    except Exception as e:
+        print(f"[ERROR] Failed to update campaign {campaign_id}: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/resume_campaign/<int:campaign_id>', methods=['POST'])
+def resume_campaign(campaign_id):
+    """Resume a stopped campaign, excluding already sent users."""
+    print(f"[DEBUG] Resuming campaign {campaign_id}")
+    
+    if campaign_id not in CAMPAIGN_DATA:
+        return jsonify({'error': 'Campaign data not found'}), 404
+    
+    campaign_data = CAMPAIGN_DATA[campaign_id]
+    status = CAMPAIGN_STATUS.get(campaign_id, {})
+    
+    if status.get('status') == 'running':
+        return jsonify({'error': 'Campaign is already running'}), 400
+    
+    # Reset stop flag
+    STOP_FLAGS[campaign_id] = False
+    
+    # Update status to indicate resuming
+    CAMPAIGN_STATUS[campaign_id] = {
+        'status': 'running',
+        'started_at': datetime.now().isoformat(),
+        'resumed_at': datetime.now().isoformat(),
+        'total_recipients': campaign_data.get('limit', 0),
+        'sent_count': status.get('sent_count', 0),  # Keep existing sent count
+        'failed_count': status.get('failed_count', 0),  # Keep existing failed count
+        'current_recipient': None,
+        'is_resumed': True
+    }
+    
+    log_campaign_event(campaign_id, 'campaign_resumed', {
+        'previous_sent': status.get('sent_count', 0),
+        'previous_failed': status.get('failed_count', 0)
+    })
+    
+    # Start the campaign execution in background
+    def _run_resume():
+        try:
+            asyncio.run(_resume_send(campaign_id))
+        except Exception as e:
+            log_campaign_event(campaign_id, 'resume_error', {'error': str(e)})
+            CAMPAIGN_STATUS[campaign_id]['status'] = 'failed'
+            CAMPAIGN_STATUS[campaign_id]['error'] = str(e)
+    
+    thread = threading.Thread(target=_run_resume, daemon=True)
+    CAMPAIGN_THREADS[campaign_id] = thread
+    thread.start()
+    
+    return jsonify({'status': 'resumed', 'campaign_id': campaign_id})
+
+async def _resume_send(campaign_id):
+    """Resume campaign execution, excluding already sent users."""
+    print(f"[DEBUG] Starting _resume_send for campaign {campaign_id}")
+    
+    campaign_data = CAMPAIGN_DATA.get(campaign_id, {})
+    session_str = campaign_data.get('session')
+    message = campaign_data.get('message')
+    limit = campaign_data.get('limit')
+    
+    if not session_str or not message:
+        log_campaign_event(campaign_id, 'resume_failed', {'error': 'Missing session or message'})
+        CAMPAIGN_STATUS[campaign_id]['status'] = 'failed'
+        CAMPAIGN_STATUS[campaign_id]['error'] = 'Missing session or message'
+        return
+    
+    client = get_telegram_client(session_str)
+    
+    try:
+        log_campaign_event(campaign_id, 'resume_client_connecting', {})
+        await client.connect()
+        log_campaign_event(campaign_id, 'resume_client_connected', {})
+        
+        # Get already sent users for this campaign
+        sent_users = SENT_USERS.get(campaign_id, set())
+        print(f"[DEBUG] Campaign {campaign_id} has {len(sent_users)} already sent users")
+        
+        recipients = []
+        async for dialog in client.iter_dialogs():
+            if STOP_FLAGS.get(campaign_id):
+                log_campaign_event(campaign_id, 'resume_stop_requested', {})
+                CAMPAIGN_STATUS[campaign_id]['status'] = 'stopped'
+                CAMPAIGN_STATUS[campaign_id]['completed_at'] = datetime.now().isoformat()
+                break
+                
+            try:
+                if not dialog.is_user:
+                    continue
+
+                user = dialog.entity
+                if user.bot:
+                    continue
+
+                # Skip users that have already been sent messages
+                user_id = str(user.id)
+                if user_id in sent_users:
+                    print(f"[DEBUG] Skipping already sent user: {user.username or user.id}")
+                    continue
+
+                # Get chat start and newest message times
+                chat_start = getattr(dialog, 'date', None)
+                last_message = getattr(dialog, 'message', None)
+                last_message_time = getattr(last_message, 'date', None) if last_message else None
+
+                # Filter by chat_start_time
+                if campaign_data.get('chat_start_time'):
+                    try:
+                        chat_start_dt = chat_start
+                        filter_dt = datetime.fromisoformat(campaign_data['chat_start_time'])
+                        if chat_start_dt:
+                            if campaign_data['chat_start_time_cmp'] == 'after' and chat_start_dt < filter_dt:
+                                continue
+                            if campaign_data['chat_start_time_cmp'] == 'before' and chat_start_dt > filter_dt:
+                                continue
+                    except Exception as e:
+                        print(f"[ERROR] chat_start_time filter: {e}")
+
+                # Filter by newest_chat_time
+                if campaign_data.get('newest_chat_time'):
+                    try:
+                        newest_dt = last_message_time
+                        filter_dt = datetime.fromisoformat(campaign_data['newest_chat_time'])
+                        if newest_dt:
+                            if campaign_data['newest_chat_time_cmp'] == 'after' and newest_dt < filter_dt:
+                                continue
+                            if campaign_data['newest_chat_time_cmp'] == 'before' and newest_dt > filter_dt:
+                                continue
+                    except Exception as e:
+                        print(f"[ERROR] newest_chat_time filter: {e}")
+
+                recipients.append(user)
+                if limit and str(limit).isdigit() and len(recipients) >= int(limit):
+                    break
+            except Exception as e:
+                print(f"[ERROR] Error while collecting recipients: {e}")
+
+        total_dialogs = len(recipients)
+        CAMPAIGN_STATUS[campaign_id]['total_recipients'] = total_dialogs
+        
+        print(f"[DEBUG] Campaign {campaign_id} will send to {total_dialogs} new recipients")
+
+        for user in recipients:
+            if STOP_FLAGS.get(campaign_id):
+                log_campaign_event(campaign_id, 'resume_stop_requested', {})
+                CAMPAIGN_STATUS[campaign_id]['status'] = 'stopped'
+                CAMPAIGN_STATUS[campaign_id]['completed_at'] = datetime.now().isoformat()
+                break
+
+            CAMPAIGN_STATUS[campaign_id]['current_recipient'] = f"{user.username or user.id}"
+
+            log_campaign_event(campaign_id, 'resume_sending_message', {
+                'recipient': f"{user.username or user.id}",
+                'message_preview': message[:50] + '...' if len(message) > 50 else message
+            })
+
+            try:
+                # await client.send_message(user, message)
+                
+                # Mark user as sent
+                user_id = str(user.id)
+                if campaign_id not in SENT_USERS:
+                    SENT_USERS[campaign_id] = set()
+                SENT_USERS[campaign_id].add(user_id)
+                
+                CAMPAIGN_STATUS[campaign_id]['sent_count'] += 1
+                log_campaign_event(campaign_id, 'resume_message_sent', {
+                    'recipient': f"{user.username or user.id}",
+                    'success': True
+                })
+
+                # Rate limiting
+                await asyncio.sleep(campaign_data['sleep_time'])
+                
+            except Exception as err:
+                CAMPAIGN_STATUS[campaign_id]['failed_count'] += 1
+                log_campaign_event(campaign_id, 'resume_message_failed', {
+                    'recipient': f"{user.username or user.id}",
+                    'error': str(err)
+                })
+                print(f"[ERROR] Failed to send message to {user.username or user.id}: {err}")
+        
+        try:
+            await client.disconnect()
+            log_campaign_event(campaign_id, 'resume_client_disconnected', {})
+        except Exception as e:
+            log_campaign_event(campaign_id, 'resume_client_disconnect_error', {'error': str(e)})
+        
+        # Update final status
+        CAMPAIGN_STATUS[campaign_id]['current_recipient'] = None
+        CAMPAIGN_STATUS[campaign_id]['completed_at'] = datetime.now().isoformat()
+
+        if STOP_FLAGS.get(campaign_id):
+            CAMPAIGN_STATUS[campaign_id]['status'] = 'stopped'
+        else:
+            CAMPAIGN_STATUS[campaign_id]['status'] = 'completed'
+            
+        log_campaign_event(campaign_id, 'resume_completed', {
+            'total_sent': CAMPAIGN_STATUS[campaign_id]['sent_count'],
+            'total_failed': CAMPAIGN_STATUS[campaign_id]['failed_count'],
+            'total_dialogs': total_dialogs,
+        })
+        
+    except Exception as e:
+        log_campaign_event(campaign_id, 'resume_error', {'error': str(e)})
+        CAMPAIGN_STATUS[campaign_id]['status'] = 'failed'
+        CAMPAIGN_STATUS[campaign_id]['error'] = str(e)
+        print(f"[ERROR] Resume campaign {campaign_id} failed: {e}")
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)

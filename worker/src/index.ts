@@ -396,7 +396,7 @@ router.get("/session/status", async (request: Request, env: Env) => {
 
 // Campaign creation placeholder
 router.post("/campaigns", async (request: Request, env: Env) => {
-  const { account_id, telegram_session_id, message_text } =
+  const { account_id, telegram_session_id, message_text, chat_start_time, chat_start_time_cmp, newest_chat_time, newest_chat_time_cmp, sleep_time } =
     (await request.json()) as any;
   console.log("POST /campaigns", { account_id, telegram_session_id });
   const accountId = Number(account_id || 0);
@@ -404,10 +404,17 @@ router.post("/campaigns", async (request: Request, env: Env) => {
     return jsonResponse({ error: "missing parameters" }, 400);
   }
 
+  const filters = {
+    chat_start_time,
+    chat_start_time_cmp,
+    newest_chat_time,
+    newest_chat_time_cmp,
+    sleep_time,
+  };
   const res = await env.DB.prepare(
-    "INSERT INTO campaigns (account_id, telegram_session_id, message_text, status) VALUES (?1, ?2, ?3, ?4)",
+    "INSERT INTO campaigns (account_id, telegram_session_id, message_text, status, filters_json) VALUES (?1, ?2, ?3, ?4, ?5)",
   )
-    .bind(accountId, telegram_session_id, message_text, "created")
+    .bind(accountId, telegram_session_id, message_text, "created", JSON.stringify(filters))
     .run();
 
   return jsonResponse({ id: res.lastRowId });
@@ -436,7 +443,7 @@ router.post("/campaigns/:id/start", async ({ params, request }, env: Env) => {
   if (!id) return jsonResponse({ error: "invalid id" }, 400);
 
   const row = await env.DB.prepare(
-    `SELECT c.id, c.account_id, c.message_text, c.telegram_session_id, t.encrypted_session_data
+    `SELECT c.id, c.account_id, c.message_text, c.telegram_session_id, c.filters_json, t.encrypted_session_data
      FROM campaigns c JOIN telegram_sessions t ON c.telegram_session_id=t.id
      WHERE c.id=?1`,
   )
@@ -460,6 +467,11 @@ router.post("/campaigns/:id/start", async ({ params, request }, env: Env) => {
     limit = undefined;
   }
 
+  let filters = {};
+  try {
+    filters = row.filters_json ? JSON.parse(row.filters_json) : {};
+  } catch {}
+
   // Log the request being sent to Python API
   const requestBody = {
     session: row.encrypted_session_data,
@@ -467,6 +479,7 @@ router.post("/campaigns/:id/start", async ({ params, request }, env: Env) => {
     account_id: row.account_id,
     campaign_id: row.id,
     ...(limit ? { limit } : {}),
+    ...filters,
   };
   console.log("Sending to Python API:", {
     ...requestBody,
@@ -568,6 +581,78 @@ router.post("/campaigns/:id/stop", stopCampaignHandler);
 router.post("/campaigns/:id/stop/", stopCampaignHandler);
 router.get("/campaigns/:id/stop", stopCampaignHandler);
 router.get("/campaigns/:id/stop/", stopCampaignHandler);
+
+// Get campaign data for editing
+router.get("/campaigns/:id/data", async ({ params }, env: Env) => {
+  const id = Number(params?.id || 0);
+  if (!id) return jsonResponse({ error: "invalid id" }, 400);
+
+  try {
+    const resp = await fetch(`${env.PYTHON_API_URL}/campaign_data/${id}`);
+    const data = await resp.json();
+    
+    if (!resp.ok) {
+      return jsonResponse({ error: "python error", details: data }, resp.status);
+    }
+    
+    return jsonResponse(data);
+  } catch (err) {
+    console.error("get campaign data error", err);
+    return jsonResponse({ error: "api request failed" }, 500);
+  }
+});
+
+// Update campaign data
+router.post("/campaigns/:id/update", async ({ params, request }, env: Env) => {
+  const id = Number(params?.id || 0);
+  if (!id) return jsonResponse({ error: "invalid id" }, 400);
+
+  try {
+    const body = await request.json();
+    const resp = await fetch(`${env.PYTHON_API_URL}/update_campaign/${id}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    
+    const data = await resp.json();
+    if (!resp.ok) {
+      return jsonResponse({ error: "python error", details: data }, resp.status);
+    }
+    
+    return jsonResponse(data);
+  } catch (err) {
+    console.error("update campaign error", err);
+    return jsonResponse({ error: "api request failed" }, 500);
+  }
+});
+
+// Resume campaign
+router.post("/campaigns/:id/resume", async ({ params }, env: Env) => {
+  const id = Number(params?.id || 0);
+  if (!id) return jsonResponse({ error: "invalid id" }, 400);
+
+  try {
+    const resp = await fetch(`${env.PYTHON_API_URL}/resume_campaign/${id}`, {
+      method: "POST",
+    });
+    
+    const data = await resp.json();
+    if (!resp.ok) {
+      return jsonResponse({ error: "python error", details: data }, resp.status);
+    }
+    
+    // Update campaign status in DB
+    await env.DB.prepare("UPDATE campaigns SET status=?1 WHERE id=?2")
+      .bind("running", id)
+      .run();
+    
+    return jsonResponse(data);
+  } catch (err) {
+    console.error("resume campaign error", err);
+    return jsonResponse({ error: "api request failed" }, 500);
+  }
+});
 
 // List categories
 router.get("/categories", async (request: Request, env: Env) => {

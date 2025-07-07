@@ -186,27 +186,60 @@ export default function CampaignEditor({ accountId, sessionId, onSelectCampaign 
 
       {drafts.length > 0 && (
         <div className="mt-8 space-y-2">
-          <h3 className="text-xl font-semibold">Draft Campaigns</h3>
+          <h3 className="text-xl font-semibold">Existing Campaigns</h3>
           <ul className="space-y-1">
             {drafts.map(c => (
               <li key={c.id} className="flex items-center justify-between border p-2 rounded">
-                <span>{c.message_text.slice(0, 30)}...</span>
-                <button
-                  className="text-sm underline"
-                  onClick={() => {
-                    fetch(`${API_BASE}/campaigns/${c.id}/start`, { method: 'POST' })
-                      .then(() => {
-                        setStatus('Campaign running')
-                        onSelectCampaign && onSelectCampaign(c.id)
-                      })
-                      .catch(err => {
-                        console.error('rerun error', err)
-                        setStatus('Failed to start')
-                      })
-                  }}
-                >
-                  Run
-                </button>
+                <div className="flex-1">
+                  <span className="block">{c.message_text.slice(0, 30)}...</span>
+                  <span className="text-xs text-gray-500">Status: {c.status}</span>
+                </div>
+                <div className="flex gap-2">
+                  {c.status === 'stopped' || c.status === 'completed' ? (
+                    <button
+                      className="text-sm px-2 py-1 bg-green-600 text-white rounded hover:bg-green-700"
+                      onClick={() => {
+                        fetch(`${API_BASE}/campaigns/${c.id}/resume`, { method: 'POST' })
+                          .then(() => {
+                            setStatus('Campaign resumed')
+                            onSelectCampaign && onSelectCampaign(c.id)
+                          })
+                          .catch(err => {
+                            console.error('resume error', err)
+                            setStatus('Failed to resume')
+                          })
+                      }}
+                    >
+                      Resume
+                    </button>
+                  ) : (
+                    <button
+                      className="text-sm px-2 py-1 bg-blue-600 text-white rounded hover:bg-blue-700"
+                      onClick={() => {
+                        fetch(`${API_BASE}/campaigns/${c.id}/start`, { method: 'POST' })
+                          .then(() => {
+                            setStatus('Campaign running')
+                            onSelectCampaign && onSelectCampaign(c.id)
+                          })
+                          .catch(err => {
+                            console.error('rerun error', err)
+                            setStatus('Failed to start')
+                          })
+                      }}
+                    >
+                      Run
+                    </button>
+                  )}
+                  <button
+                    className="text-sm px-2 py-1 bg-gray-600 text-white rounded hover:bg-gray-700"
+                    onClick={() => {
+                      // Navigate to campaign monitor to edit
+                      onSelectCampaign && onSelectCampaign(c.id)
+                    }}
+                  >
+                    Edit
+                  </button>
+                </div>
               </li>
             ))}
           </ul>
