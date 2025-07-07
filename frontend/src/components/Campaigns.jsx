@@ -1,11 +1,18 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import CampaignForm from "./CampaignForm";
+import DOMPurify from 'dompurify';
 
 const API_BASE = (
   import.meta.env.VITE_API_BASE ||
   "https://retargetting-worker.elmtalabx.workers.dev"
 ).replace(/\/$/, "");
+
+function stripPTags(html) {
+  // Remove wrapping <p>...</p> if present
+  if (!html) return '';
+  return html.replace(/^<p>(.*?)<\/p>$/is, '$1');
+}
 
 export default function Campaigns({ accountId, sessionId, onSelectCampaign }) {
   const [campaigns, setCampaigns] = useState([]);
@@ -98,9 +105,13 @@ export default function Campaigns({ accountId, sessionId, onSelectCampaign }) {
           >
             <div>
               <p className="font-medium">Campaign #{c.id}</p>
-              <p className="text-sm text-gray-600">
-                {c.message_text.slice(0, 60)}...
+              <p className="text-xs text-gray-500 mb-1">
+                <span>Account: {c.account_email || 'N/A'}</span> | <span>Session: {c.session_phone || c.telegram_session_id || 'N/A'}</span>
               </p>
+              <div className="text-sm text-gray-600" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(stripPTags(c.message_text)).slice(0, 120) + (c.message_text.length > 120 ? '...' : '') }} />
+              {c.filters_json && (
+                <pre className="text-xs text-gray-400 mt-1">{c.filters_json}</pre>
+              )}
             </div>
             <div className="flex items-center gap-4">
               <span

@@ -427,7 +427,11 @@ router.get("/campaigns", async (request: Request, env: Env) => {
   if (!accountId) return jsonResponse({ error: "account_id required" }, 400);
 
   const { results } = await env.DB.prepare(
-    "SELECT id, message_text, status FROM campaigns WHERE account_id=?1 ORDER BY id DESC",
+    `SELECT c.id, c.message_text, c.status, c.filters_json, c.telegram_session_id, t.phone as session_phone, a.email as account_email
+     FROM campaigns c
+     LEFT JOIN telegram_sessions t ON c.telegram_session_id = t.id
+     LEFT JOIN accounts a ON c.account_id = a.id
+     WHERE c.account_id=?1 ORDER BY c.id DESC`
   )
     .bind(accountId)
     .all();
