@@ -310,5 +310,42 @@ def classify_text():
 
     return jsonify({'matches': matched})
 
+
+@app.route('/chats', methods=['POST'])
+def get_chats():
+    """Return recent chat messages for each dialog on the account."""
+    data = request.get_json(force=True)
+    session_str = data.get('session')
+    limit = int(data.get('limit', 20))
+    logger.info('get_chats limit=%s', limit)
+    if not session_str:
+        return jsonify({'error': 'session required'}), 400
+
+    async def _collect():
+        client = get_telegram_client(session_str)
+        await client.connect()
+        chats = []
+        try:
+            async for dialog in client.iter_dialogs():
+                if not getattr(dialog, 'is_user', False):
+                    continue
+                user = dialog.entity
+                phone = getattr(user, 'phone', None) or str(user.id)
+                messages = []
+                async for msg in client.iter_messages(user.id, limit=limit):
+                    if msg.text:
+                        messages.append(msg.text)
+                chats.append({'phone': phone, 'messages': messages})
+        finally:
+            await client.disconnect()
+        return chats
+
+    try:
+        chats = asyncio.run(_collect())
+        return jsonify({'chats': chats})
+    except Exception as e:
+        logger.error('get_chats error %s', e)
+        return jsonify({'error': str(e)}), 500
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
