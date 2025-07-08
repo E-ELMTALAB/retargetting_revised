@@ -2,7 +2,7 @@ import { Router } from "itty-router";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
+  "Access-Control-Allow-Methods": "GET,POST,DELETE,OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type",
 };
 
@@ -1093,7 +1093,7 @@ export default {
     }
     resp.headers.set("Access-Control-Allow-Origin", "*");
     resp.headers.set("Access-Control-Allow-Headers", "Content-Type");
-    resp.headers.set("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+    resp.headers.set("Access-Control-Allow-Methods", "GET,POST,DELETE,OPTIONS");
     return resp;
   },
 };
