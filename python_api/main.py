@@ -7,6 +7,7 @@ import os
 import json
 from datetime import datetime
 import threading
+import requests
 
 app = Flask(__name__)
 
@@ -14,6 +15,7 @@ app = Flask(__name__)
 TELEGRAM_API_ID = 27418503
 TELEGRAM_API_HASH = "911f278e674b5aaa7a4ecf14a49ea4d7"
 SESSION_FILE = 'me.session'
+WORKER_API_URL = os.environ.get('WORKER_API_URL', 'http://localhost:8787')
 
 # Validate API credentials
 if not TELEGRAM_API_ID or not TELEGRAM_API_HASH:
@@ -29,6 +31,9 @@ STOP_FLAGS = {}
 CAMPAIGN_THREADS = {}
 CAMPAIGN_DATA = {}  # Store campaign configuration data
 SENT_USERS = {}  # Track users that have been sent messages per campaign
+
+# Worker API base URL for categorization updates
+WORKER_API_URL = os.environ.get('WORKER_API_URL', 'http://localhost:8787')
 
 @app.after_request
 def add_cors_headers(response):
@@ -82,6 +87,95 @@ def log_campaign_event(campaign_id, event_type, details):
     CAMPAIGN_LOGS[campaign_id].append(log_entry)
     print(f"[CAMPAIGN {campaign_id}] {timestamp} - {event_type}: {details}")
 
+# ----- Categorization Helpers -----
+def fetch_categories(account_id):
+    """Retrieve categories from the worker API."""
+    try:
+        resp = requests.get(f"{WORKER_API_URL}/categories?account_id={account_id}", timeout=10)
+        data = resp.json()
+        if resp.status_code == 200:
+            return data.get('categories', [])
+    except Exception as e:
+        print(f"[ERROR] fetch_categories: {e}")
+    return []
+
+def classify_local(text, categories):
+    matches = []
+    text_lower = text.lower()
+    for cat in categories:
+        name = cat.get('name')
+        kws = cat.get('keywords', [])
+        examples = cat.get('examples', [])
+        hit_kw = None
+        for kw in kws:
+            if kw and kw.lower() in text_lower:
+                hit_kw = kw
+                break
+        if not hit_kw:
+            for ex in examples:
+                if ex and ex.lower() in text_lower:
+                    hit_kw = ex
+                    break
+        if hit_kw:
+            matches.append({'category': name, 'keyword': hit_kw})
+    return matches
+
+async def collect_chats(session_str, limit=20):
+    client = get_telegram_client(session_str)
+    await client.connect()
+    chats = []
+    try:
+        async for dialog in client.iter_dialogs():
+            if not dialog.is_user:
+                continue
+            user = dialog.entity
+            phone = getattr(user, 'phone', None) or str(user.id)
+            msgs = []
+            async for msg in client.iter_messages(user.id, limit=limit):
+                if msg.text:
+                    msgs.append(msg.text)
+            chats.append({'phone': phone, 'messages': msgs})
+    finally:
+        await client.disconnect()
+    return chats
+
+def send_categorizations(account_id, matches, campaign_id):
+    if not matches:
+        return {'updated': 0}
+    try:
+        resp = requests.post(
+            f"{WORKER_API_URL}/categorize",
+            json={'account_id': account_id, 'matches': matches},
+            timeout=10,
+        )
+        data = resp.json()
+        log_campaign_event(campaign_id, 'worker_categorize_response', {'status': resp.status_code, 'body': data})
+        return data
+    except Exception as e:
+        log_campaign_event(campaign_id, 'worker_categorize_error', {'error': str(e)})
+        print(f"[ERROR] send_categorizations: {e}")
+        return {'error': str(e)}
+
+def categorize_session(session_str, categories, account_id, campaign_id):
+    async def _run():
+        chats = await collect_chats(session_str)
+        log_campaign_event(campaign_id, 'categorization_chats', {'count': len(chats)})
+        matches = []
+        for chat in chats:
+            text = " \n".join(chat.get('messages', []))
+            res = classify_local(text, categories)
+            for m in res:
+                log_campaign_event(
+                    campaign_id,
+                    'categorization_match',
+                    {'phone': chat['phone'], 'category': m['category'], 'keyword': m['keyword']},
+                )
+                matches.append({'phone': chat['phone'], 'category': m['category'], 'keyword': m['keyword']})
+        send_res = send_categorizations(account_id, matches, campaign_id)
+        return {'chats': len(chats), 'matches': len(matches), 'worker': send_res}
+
+    return asyncio.run(_run())
+
 @app.route('/health', methods=['GET'])
 def health():
     """Simple health check endpoint with API credential validation."""
@@ -124,6 +218,7 @@ def execute_campaign():
     newest_chat_time = payload.get('newest_chat_time')
     newest_chat_time_cmp = payload.get('newest_chat_time_cmp', 'after')  # 'after' or 'before'
     sleep_time = payload.get('sleep_time', 1)
+    categories = payload.get('categories')
     try:
         sleep_time = float(sleep_time)
         if sleep_time < 0:
@@ -161,6 +256,12 @@ def execute_campaign():
 
     print(f"[DEBUG] Starting campaign execution for campaign {campaign_id}")
 
+    if not categories:
+        categories = fetch_categories(account_id)
+    cat_summary = categorize_session(session_str, categories, account_id, campaign_id)
+    print(f"[DEBUG] Categorization summary: {cat_summary}")
+    log_campaign_event(campaign_id, 'categorization_complete', cat_summary)
+
     # Initialize campaign logging
     log_campaign_event(campaign_id, 'campaign_started', {
         'account_id': account_id,
@@ -179,7 +280,9 @@ def execute_campaign():
         'chat_start_time_cmp': chat_start_time_cmp,
         'newest_chat_time': newest_chat_time,
         'newest_chat_time_cmp': newest_chat_time_cmp,
-        'sleep_time': sleep_time
+        'sleep_time': sleep_time,
+        'categories': categories,
+        'categorization_summary': cat_summary
     }
 
     CAMPAIGN_STATUS[campaign_id] = {
@@ -476,7 +579,7 @@ def execute_campaign():
     thread.start()
 
     print(f"[DEBUG] Campaign {campaign_id} started in background thread")
-    return jsonify({'status': 'started'})
+    return jsonify({'status': 'started', 'categorization': cat_summary})
 
 
 @app.route('/session/connect', methods=['POST'])
@@ -794,6 +897,12 @@ def resume_campaign(campaign_id):
         'previous_sent': status.get('sent_count', 0),
         'previous_failed': status.get('failed_count', 0)
     })
+
+    categories = campaign_data.get('categories') or fetch_categories(campaign_data.get('account_id'))
+    cat_summary = categorize_session(campaign_data.get('session'), categories, campaign_data.get('account_id'), campaign_id)
+    log_campaign_event(campaign_id, 'categorization_complete', cat_summary)
+    campaign_data['categories'] = categories
+    campaign_data['categorization_summary'] = cat_summary
     
     # Start the campaign execution in background
     def _run_resume():
@@ -808,7 +917,7 @@ def resume_campaign(campaign_id):
     CAMPAIGN_THREADS[campaign_id] = thread
     thread.start()
     
-    return jsonify({'status': 'resumed', 'campaign_id': campaign_id})
+    return jsonify({'status': 'resumed', 'campaign_id': campaign_id, 'categorization': cat_summary})
 
 async def _resume_send(campaign_id):
     """Resume campaign execution, excluding already sent users."""
