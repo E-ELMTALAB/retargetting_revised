@@ -690,7 +690,7 @@ router.get("/categories", async (request: Request, env: Env) => {
   console.log("categories results", results);
 
   return new Response(JSON.stringify({ categories: results }), {
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...corsHeaders },
   });
 });
 
@@ -723,7 +723,7 @@ router.post("/categories", async (request: Request, env: Env) => {
   console.log("inserted category id", res.lastRowId);
 
   return new Response(JSON.stringify({ id: res.lastRowId }), {
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...corsHeaders },
   });
 });
 
