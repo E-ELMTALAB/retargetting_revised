@@ -34,9 +34,8 @@ SENT_USERS = {}  # Track users that have been sent messages per campaign
 
 # Worker API base URL for categorization updates
 
-WORKER_API_URL = os.environ.get('https://retargetting-worker.elmtalabx.workers.dev')
-
 WORKER_API_URL = 'https://retargetting-worker.elmtalabx.workers.dev'
+
 
 @app.after_request
 def add_cors_headers(response):
@@ -134,119 +133,46 @@ def classify_local(text, categories):
     return matches
 
 
-async def collect_recipients(
-    client,
-    limit=None,
-    chat_start_time=None,
-    chat_start_time_cmp="after",
-    newest_chat_time=None,
-    newest_chat_time_cmp="after",
-):
-    """Gather recipients using the same filters as the send loop."""
-    recipients = []
-    async for dialog in client.iter_dialogs():
-        if not dialog.is_user:
-            continue
-        user = dialog.entity
-        if getattr(user, "bot", False):
-            continue
 
-        chat_start = getattr(dialog, "date", None)
-        last_message = getattr(dialog, "message", None)
-        last_message_time = getattr(last_message, "date", None) if last_message else None
-
-        if chat_start_time:
-            try:
-                chat_start_dt = chat_start
-                filter_dt = datetime.fromisoformat(chat_start_time)
-                if chat_start_dt:
-                    if chat_start_time_cmp == "after" and chat_start_dt < filter_dt:
-                        continue
-                    if chat_start_time_cmp == "before" and chat_start_dt > filter_dt:
-                        continue
-            except Exception as e:
-                print(f"[ERROR] chat_start_time filter: {e}")
-
-        if newest_chat_time:
-            try:
-                newest_dt = last_message_time
-                filter_dt = datetime.fromisoformat(newest_chat_time)
-                if newest_dt:
-                    if newest_chat_time_cmp == "after" and newest_dt < filter_dt:
-                        continue
-                    if newest_chat_time_cmp == "before" and newest_dt > filter_dt:
-                        continue
-            except Exception as e:
-                print(f"[ERROR] newest_chat_time filter: {e}")
-
-        recipients.append(user)
-        if limit and isinstance(limit, int) and len(recipients) >= limit:
-            break
-
-    return recipients
-
-
-async def categorize_recipients(
-    session_str,
-    categories,
-    account_id,
-    campaign_id,
-    limit=None,
-    chat_start_time=None,
-    chat_start_time_cmp="after",
-    newest_chat_time=None,
-    newest_chat_time_cmp="after",
-):
-    client = get_telegram_client(session_str)
-    await client.connect()
-    matches = []
+async def categorize_user(client, user, categories, account_id, campaign_id):
+    """Classify a single user's chat history and upload matches."""
+    phone = getattr(user, "phone", None) or str(user.id)
+    msgs = []
     try:
-        recipients = await collect_recipients(
-            client,
-            limit=limit,
-            chat_start_time=chat_start_time,
-            chat_start_time_cmp=chat_start_time_cmp,
-            newest_chat_time=newest_chat_time,
-            newest_chat_time_cmp=newest_chat_time_cmp,
-        )
-        recipients_count = len(recipients)
+        async for msg in client.iter_messages(user.id, limit=20):
+            if msg.text:
+                msgs.append(msg.text)
+    except Exception as e:
         log_campaign_event(
-            campaign_id, "categorization_recipients", {"count": recipients_count}
+            campaign_id,
+            "categorization_error",
+            {"phone": phone, "error": str(e)},
         )
-        for user in recipients:
-            phone = getattr(user, "phone", None) or str(user.id)
-            msgs = []
-            async for msg in client.iter_messages(user.id, limit=20):
-                if msg.text:
-                    msgs.append(msg.text)
-            text = " \n".join(msgs)
-            res = classify_local(text, categories)
-            for m in res:
-                log_campaign_event(
-                    campaign_id,
-                    "categorization_match",
-                    {
-                        "phone": phone,
-                        "category": m["category"],
-                        "keyword": m["keyword"],
-                    },
-                )
-                matches.append(
-                    {
-                        "phone": phone,
-                        "category": m["category"],
-                        "keyword": m["keyword"],
-                    }
-                )
-    finally:
-        await client.disconnect()
+        return
 
-    send_res = send_categorizations(account_id, matches, campaign_id)
-    return {
-        "recipients": recipients_count,
-        "matches": len(matches),
-        "worker": send_res,
-    }
+    text = " \n".join(msgs)
+    res = classify_local(text, categories)
+    if not res:
+        return
+    for m in res:
+        log_campaign_event(
+            campaign_id,
+            "categorization_match",
+            {
+                "phone": phone,
+                "category": m["category"],
+                "keyword": m["keyword"],
+            },
+        )
+
+    send_categorizations(
+        account_id,
+        [
+            {"phone": phone, "category": m["category"], "keyword": m["keyword"]}
+            for m in res
+        ],
+        campaign_id,
+    )
 
 
 
@@ -351,20 +277,8 @@ def execute_campaign():
     if not categories:
         categories = fetch_categories(account_id)
 
-    cat_summary = categorize_recipients(
-        session_str,
-        categories,
-        account_id,
-        campaign_id,
-        limit=limit,
-        chat_start_time=chat_start_time,
-        chat_start_time_cmp=chat_start_time_cmp,
-        newest_chat_time=newest_chat_time,
-        newest_chat_time_cmp=newest_chat_time_cmp,
-    )
+    log_campaign_event(campaign_id, 'categorization_loaded', {'categories': len(categories)})
 
-    print(f"[DEBUG] Categorization summary: {cat_summary}")
-    log_campaign_event(campaign_id, 'categorization_complete', cat_summary)
 
     # Initialize campaign logging
     log_campaign_event(campaign_id, 'campaign_started', {
@@ -385,8 +299,9 @@ def execute_campaign():
         'newest_chat_time': newest_chat_time,
         'newest_chat_time_cmp': newest_chat_time_cmp,
         'sleep_time': sleep_time,
-        'categories': categories,
-        'categorization_summary': cat_summary
+
+        'categories': categories
+
     }
 
     CAMPAIGN_STATUS[campaign_id] = {
@@ -519,6 +434,8 @@ def execute_campaign():
                 'recipient': f"{user.username or user.id}",
                 'name': user_info.strip() or 'Unknown'
             })
+
+            await categorize_user(client, user, categories, account_id, campaign_id)
 
             try:
                 # await client.send_message(user, message)
@@ -1006,21 +923,9 @@ def resume_campaign(campaign_id):
     categories = campaign_data.get('categories') or fetch_categories(
         campaign_data.get('account_id')
     )
-    cat_summary = categorize_recipients(
-        campaign_data.get('session'),
-        categories,
-        campaign_data.get('account_id'),
-        campaign_id,
-        limit=campaign_data.get('limit'),
-        chat_start_time=campaign_data.get('chat_start_time'),
-        chat_start_time_cmp=campaign_data.get('chat_start_time_cmp', 'after'),
-        newest_chat_time=campaign_data.get('newest_chat_time'),
-        newest_chat_time_cmp=campaign_data.get('newest_chat_time_cmp', 'after'),
-    )
-
-    log_campaign_event(campaign_id, 'categorization_complete', cat_summary)
+    log_campaign_event(campaign_id, 'categorization_loaded', {'categories': len(categories)})
     campaign_data['categories'] = categories
-    campaign_data['categorization_summary'] = cat_summary
+
     
     # Start the campaign execution in background
     def _run_resume():
@@ -1140,6 +1045,8 @@ async def _resume_send(campaign_id):
                 'recipient': f"{user.username or user.id}",
                 'message_preview': message[:50] + '...' if len(message) > 50 else message
             })
+
+            await categorize_user(client, user, categories, campaign_data.get('account_id'), campaign_id)
 
             try:
                 # await client.send_message(user, message)
