@@ -158,6 +158,84 @@ function jsonResponse(obj: any, status = 200) {
   });
 }
 
+interface Chat {
+  phone: string;
+  messages: string[];
+}
+
+// Fetch chats for categorization from the Python API
+async function fetchChats(env: Env, session: string): Promise<Chat[]> {
+  try {
+    const resp = await fetch(`${env.PYTHON_API_URL}/chats`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ session }),
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (resp.ok && data && Array.isArray(data.chats)) {
+      console.log(`[CATEGORIZE] fetched ${data.chats.length} chats`);
+      return data.chats as Chat[];
+    }
+    console.log("[CATEGORIZE] no chats returned");
+  } catch (err) {
+    console.error("fetchChats error", err);
+  }
+  return [];
+}
+
+// Categorize chats based on keywords
+async function categorizeChats(
+  env: Env,
+  accountId: number,
+  session: string,
+): Promise<void> {
+  const catRes: any = await env.DB.prepare(
+    "SELECT name, keywords_json FROM categories WHERE account_id=?1",
+  )
+    .bind(accountId)
+    .all();
+  const categories = Array.isArray(catRes) ? catRes : catRes.results || [];
+  if (!categories.length) {
+    console.log("[CATEGORIZE] no categories defined");
+    return;
+  }
+  const chats = await fetchChats(env, session);
+  for (const chat of chats) {
+    const text = (chat.messages || []).join(" \n").toLowerCase();
+    for (const cat of categories) {
+      let kws: string[] = [];
+      try {
+        kws = JSON.parse(cat.keywords_json || "[]");
+      } catch {}
+      if (!Array.isArray(kws)) kws = [];
+      const hit = kws.some((kw) => kw && text.includes(String(kw).toLowerCase()));
+      if (hit) {
+        const existing = await env.DB.prepare(
+          "SELECT id FROM customer_categories WHERE account_id=?1 AND user_phone=?2 AND category=?3",
+        )
+          .bind(accountId, chat.phone, cat.name)
+          .first();
+        if (existing && existing.id) {
+          await env.DB.prepare(
+            "UPDATE customer_categories SET confidence_score=?1 WHERE id=?2",
+          )
+            .bind(0.8, existing.id)
+            .run();
+        } else {
+          await env.DB.prepare(
+            "INSERT INTO customer_categories (account_id, user_phone, category, confidence_score) VALUES (?1, ?2, ?3, ?4)",
+          )
+            .bind(accountId, chat.phone, cat.name, 0.8)
+            .run();
+        }
+        console.log(
+          `[CATEGORIZE] user ${chat.phone} matched category ${cat.name}`,
+        );
+      }
+    }
+  }
+}
+
 // Sign up new account
 router.post("/auth/signup", async (request: Request, env: Env) => {
   const { email, password } = (await request.json()) as any;
@@ -481,6 +559,13 @@ router.post("/campaigns/:id/start", async ({ params, request }, env: Env) => {
     return jsonResponse({ error: "no session data found" }, 400);
   }
 
+  // Categorize users based on chat history before sending
+  try {
+    await categorizeChats(env, row.account_id, row.encrypted_session_data);
+  } catch (e) {
+    console.error("categorizeChats error", e);
+  }
+
   let limit: number | undefined;
   try {
     const body = await request.json();
@@ -654,6 +739,23 @@ router.post("/campaigns/:id/update", async ({ params, request }, env: Env) => {
 router.post("/campaigns/:id/resume", async ({ params }, env: Env) => {
   const id = Number(params?.id || 0);
   if (!id) return jsonResponse({ error: "invalid id" }, 400);
+
+  let row: any;
+  try {
+    row = await env.DB.prepare(
+      `SELECT c.account_id, t.encrypted_session_data FROM campaigns c JOIN telegram_sessions t ON c.telegram_session_id=t.id WHERE c.id=?1`,
+    )
+      .bind(id)
+      .first();
+  } catch {}
+
+  if (row && row.encrypted_session_data) {
+    try {
+      await categorizeChats(env, row.account_id, row.encrypted_session_data);
+    } catch (e) {
+      console.error("categorizeChats error", e);
+    }
+  }
 
   try {
     const resp = await fetch(`${env.PYTHON_API_URL}/resume_campaign/${id}`, {
