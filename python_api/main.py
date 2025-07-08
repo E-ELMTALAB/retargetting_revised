@@ -15,6 +15,7 @@ app = Flask(__name__)
 TELEGRAM_API_ID = 27418503
 TELEGRAM_API_HASH = "911f278e674b5aaa7a4ecf14a49ea4d7"
 SESSION_FILE = 'me.session'
+WORKER_API_URL = os.environ.get('https://retargetting-worker.elmtalabx.workers.dev')
 
 # Validate API credentials
 if not TELEGRAM_API_ID or not TELEGRAM_API_HASH:
@@ -32,7 +33,9 @@ CAMPAIGN_DATA = {}  # Store campaign configuration data
 SENT_USERS = {}  # Track users that have been sent messages per campaign
 
 # Worker API base URL for categorization updates
-WORKER_API_URL = os.environ.get('WORKER_API_URL', 'http://localhost:8787')
+
+WORKER_API_URL = os.environ.get('https://retargetting-worker.elmtalabx.workers.dev')
+
 
 @app.after_request
 def add_cors_headers(response):
@@ -91,15 +94,18 @@ def log_campaign_event(campaign_id, event_type, details):
 def fetch_categories(account_id):
     """Retrieve categories from the worker API."""
     try:
+
         resp = requests.get(
             f"{WORKER_API_URL}/categories?account_id={account_id}", timeout=10
         )
         data = resp.json()
         if resp.status_code == 200:
             return data.get("categories", [])
+
     except Exception as e:
         print(f"[ERROR] fetch_categories: {e}")
     return []
+
 
 
 def classify_local(text, categories):
@@ -110,6 +116,7 @@ def classify_local(text, categories):
         name = cat.get("name")
         kws = cat.get("keywords", [])
         examples = cat.get("examples", [])
+
         hit_kw = None
         for kw in kws:
             if kw and kw.lower() in text_lower:
@@ -121,6 +128,7 @@ def classify_local(text, categories):
                     hit_kw = ex
                     break
         if hit_kw:
+
             matches.append({"category": name, "keyword": hit_kw})
     return matches
 
@@ -240,6 +248,7 @@ async def categorize_recipients(
     }
 
 
+
 def send_categorizations(account_id, matches, campaign_id):
     if not matches:
         return {'updated': 0}
@@ -340,6 +349,7 @@ def execute_campaign():
 
     if not categories:
         categories = fetch_categories(account_id)
+
     cat_summary = categorize_recipients(
         session_str,
         categories,
@@ -351,6 +361,7 @@ def execute_campaign():
         newest_chat_time=newest_chat_time,
         newest_chat_time_cmp=newest_chat_time_cmp,
     )
+
     print(f"[DEBUG] Categorization summary: {cat_summary}")
     log_campaign_event(campaign_id, 'categorization_complete', cat_summary)
 
@@ -990,6 +1001,7 @@ def resume_campaign(campaign_id):
         'previous_failed': status.get('failed_count', 0)
     })
 
+
     categories = campaign_data.get('categories') or fetch_categories(
         campaign_data.get('account_id')
     )
@@ -1004,6 +1016,7 @@ def resume_campaign(campaign_id):
         newest_chat_time=campaign_data.get('newest_chat_time'),
         newest_chat_time_cmp=campaign_data.get('newest_chat_time_cmp', 'after'),
     )
+
     log_campaign_event(campaign_id, 'categorization_complete', cat_summary)
     campaign_data['categories'] = categories
     campaign_data['categorization_summary'] = cat_summary
