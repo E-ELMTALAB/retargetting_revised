@@ -680,18 +680,26 @@ router.post("/campaigns/:id/resume", async ({ params }, env: Env) => {
 // List categories
 router.get("/categories", async (request: Request, env: Env) => {
   const accountId = 1;
-
-  console.log("GET /categories account", accountId);
-  const { results } = await env.DB.prepare(
-    "SELECT id, name, keywords_json, description, regex_pattern, sample_chats_json FROM categories WHERE account_id=?1",
-  )
-    .bind(accountId)
-    .all();
-  console.log("categories results", results);
-
-  return new Response(JSON.stringify({ categories: results }), {
-    headers: { "Content-Type": "application/json", ...corsHeaders },
-  });
+  let logs = [];
+  try {
+    logs.push(`GET /categories account ${accountId}`);
+    const { results } = await env.DB.prepare(
+      "SELECT id, name, keywords_json, description, regex_pattern, sample_chats_json FROM categories WHERE account_id=?1",
+    )
+      .bind(accountId)
+      .all();
+    logs.push(`categories results: ${JSON.stringify(results)}`);
+    return new Response(JSON.stringify({ categories: results, logs }), {
+      headers: { "Content-Type": "application/json", ...corsHeaders },
+    });
+  } catch (err) {
+    const e = err as any;
+    logs.push(`ERROR: ${e && (e.stack || e.message || e.toString())}`);
+    return new Response(JSON.stringify({ error: "failed to fetch categories", logs }), {
+      status: 500,
+      headers: { "Content-Type": "application/json", ...corsHeaders },
+    });
+  }
 });
 
 // Create category
