@@ -7,6 +7,7 @@ import os
 import json
 from datetime import datetime
 import threading
+import requests
 
 app = Flask(__name__)
 
@@ -29,6 +30,9 @@ STOP_FLAGS = {}
 CAMPAIGN_THREADS = {}
 CAMPAIGN_DATA = {}  # Store campaign configuration data
 SENT_USERS = {}  # Track users that have been sent messages per campaign
+
+# Worker API base URL for categorization updates
+WORKER_API_URL = os.environ.get('WORKER_API_URL', 'http://localhost:8787')
 
 @app.after_request
 def add_cors_headers(response):
@@ -82,6 +86,104 @@ def log_campaign_event(campaign_id, event_type, details):
     CAMPAIGN_LOGS[campaign_id].append(log_entry)
     print(f"[CAMPAIGN {campaign_id}] {timestamp} - {event_type}: {details}")
 
+
+# ----- Categorization Helpers -----
+def fetch_categories(account_id):
+    """Retrieve categories from the worker API."""
+    try:
+        resp = requests.get(
+            f"{WORKER_API_URL}/categories?account_id={account_id}", timeout=10
+        )
+        data = resp.json()
+        if resp.status_code == 200:
+            return data.get("categories", [])
+    except Exception as e:
+        print(f"[ERROR] fetch_categories: {e}")
+    return []
+
+
+def classify_local(text, categories):
+    matches = []
+    recipients_count = 0
+    text_lower = text.lower()
+    for cat in categories:
+        name = cat.get("name")
+        kws = cat.get("keywords", [])
+        examples = cat.get("examples", [])
+        hit_kw = None
+        for kw in kws:
+            if kw and kw.lower() in text_lower:
+                hit_kw = kw
+                break
+        if not hit_kw:
+            for ex in examples:
+                if ex and ex.lower() in text_lower:
+                    hit_kw = ex
+                    break
+        if hit_kw:
+            matches.append({"category": name, "keyword": hit_kw})
+    return matches
+
+
+async def categorize_user(client, user, categories, account_id, campaign_id):
+    """Classify a single user's chat history and upload matches."""
+    phone = getattr(user, "phone", None) or str(user.id)
+    msgs = []
+    try:
+        async for msg in client.iter_messages(user.id, limit=20):
+            if msg.text:
+                msgs.append(msg.text)
+    except Exception as e:
+        log_campaign_event(
+            campaign_id,
+            "categorization_error",
+            {"phone": phone, "error": str(e)},
+        )
+        return
+
+    text = " \n".join(msgs)
+    res = classify_local(text, categories)
+    if not res:
+        return
+    for m in res:
+        log_campaign_event(
+            campaign_id,
+            "categorization_match",
+            {
+                "phone": phone,
+                "category": m["category"],
+                "keyword": m["keyword"],
+            },
+        )
+
+    send_categorizations(
+        account_id,
+        [
+            {"phone": phone, "category": m["category"], "keyword": m["keyword"]}
+            for m in res
+        ],
+        campaign_id,
+    )
+
+
+def send_categorizations(account_id, matches, campaign_id):
+    if not matches:
+        return {'updated': 0}
+    try:
+        resp = requests.post(
+            f"{WORKER_API_URL}/categorize",
+            json={'account_id': account_id, 'matches': matches},
+            timeout=10,
+        )
+        data = resp.json()
+        log_campaign_event(campaign_id, 'worker_categorize_response', {'status': resp.status_code, 'body': data})
+        return data
+    except Exception as e:
+        log_campaign_event(campaign_id, 'worker_categorize_error', {'error': str(e)})
+        print(f"[ERROR] send_categorizations: {e}")
+        return {'error': str(e)}
+
+
 @app.route('/health', methods=['GET'])
 def health():
     """Simple health check endpoint with API credential validation."""
@@ -124,6 +226,7 @@ def execute_campaign():
     newest_chat_time = payload.get('newest_chat_time')
     newest_chat_time_cmp = payload.get('newest_chat_time_cmp', 'after')  # 'after' or 'before'
     sleep_time = payload.get('sleep_time', 1)
+    categories = payload.get('categories')
     try:
         sleep_time = float(sleep_time)
         if sleep_time < 0:
@@ -161,6 +264,10 @@ def execute_campaign():
 
     print(f"[DEBUG] Starting campaign execution for campaign {campaign_id}")
 
+    if not categories:
+        categories = fetch_categories(account_id)
+    log_campaign_event(campaign_id, 'categorization_loaded', {'categories': len(categories)})
+
     # Initialize campaign logging
     log_campaign_event(campaign_id, 'campaign_started', {
         'account_id': account_id,
@@ -179,7 +286,8 @@ def execute_campaign():
         'chat_start_time_cmp': chat_start_time_cmp,
         'newest_chat_time': newest_chat_time,
         'newest_chat_time_cmp': newest_chat_time_cmp,
-        'sleep_time': sleep_time
+        'sleep_time': sleep_time,
+        'categories': categories
     }
 
     CAMPAIGN_STATUS[campaign_id] = {
@@ -312,6 +420,8 @@ def execute_campaign():
                 'recipient': f"{user.username or user.id}",
                 'name': user_info.strip() or 'Unknown'
             })
+
+            await categorize_user(client, user, categories, account_id, campaign_id)
 
             try:
                 # await client.send_message(user, message)
@@ -794,6 +904,12 @@ def resume_campaign(campaign_id):
         'previous_sent': status.get('sent_count', 0),
         'previous_failed': status.get('failed_count', 0)
     })
+
+    categories = campaign_data.get('categories') or fetch_categories(
+        campaign_data.get('account_id')
+    )
+    log_campaign_event(campaign_id, 'categorization_loaded', {'categories': len(categories)})
+    campaign_data['categories'] = categories
     
     # Start the campaign execution in background
     def _run_resume():
@@ -913,6 +1029,8 @@ async def _resume_send(campaign_id):
                 'recipient': f"{user.username or user.id}",
                 'message_preview': message[:50] + '...' if len(message) > 50 else message
             })
+
+            await categorize_user(client, user, categories, campaign_data.get('account_id'), campaign_id)
 
             try:
                 # await client.send_message(user, message)

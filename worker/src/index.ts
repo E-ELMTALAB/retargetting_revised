@@ -559,12 +559,6 @@ router.post("/campaigns/:id/start", async ({ params, request }, env: Env) => {
     return jsonResponse({ error: "no session data found" }, 400);
   }
 
-  // Categorize users based on chat history before sending
-  try {
-    await categorizeChats(env, row.account_id, row.encrypted_session_data);
-  } catch (e) {
-    console.error("categorizeChats error", e);
-  }
 
   let limit: number | undefined;
   try {
@@ -749,13 +743,7 @@ router.post("/campaigns/:id/resume", async ({ params }, env: Env) => {
       .first();
   } catch {}
 
-  if (row && row.encrypted_session_data) {
-    try {
-      await categorizeChats(env, row.account_id, row.encrypted_session_data);
-    } catch (e) {
-      console.error("categorizeChats error", e);
-    }
-  }
+  // Categorization now handled by Python API
 
   try {
     const resp = await fetch(`${env.PYTHON_API_URL}/resume_campaign/${id}`, {
@@ -871,6 +859,53 @@ router.delete("/categories/:id", async ({ params }: any, env: Env) => {
     .bind(id, accountId)
     .run();
   return jsonResponse({ id, deleted: true });
+});
+
+// Receive categorization results from Python API
+router.post("/categorize", async (request: Request, env: Env) => {
+  const { account_id, matches } = (await request.json()) as any;
+  const logs: string[] = [];
+  const accountId = Number(account_id || 0);
+  if (!accountId || !Array.isArray(matches)) {
+    logs.push("invalid parameters");
+    return jsonResponse({ error: "invalid parameters", logs }, 400);
+  }
+  let updated = 0;
+  for (const m of matches) {
+    const phone = m?.phone;
+    const category = m?.category;
+    const score = Number(m?.score ?? 0.8);
+    if (!phone || !category) {
+      logs.push(`[skip] missing data for ${JSON.stringify(m)}`);
+      continue;
+    }
+    try {
+      const existing = await env.DB.prepare(
+        "SELECT id FROM customer_categories WHERE account_id=?1 AND user_phone=?2 AND category=?3",
+      )
+        .bind(accountId, phone, category)
+        .first();
+      if (existing && existing.id) {
+        await env.DB.prepare(
+          "UPDATE customer_categories SET confidence_score=?1 WHERE id=?2",
+        )
+          .bind(score, existing.id)
+          .run();
+        logs.push(`[update] ${phone} -> ${category}`);
+      } else {
+        await env.DB.prepare(
+          "INSERT INTO customer_categories (account_id, user_phone, category, confidence_score) VALUES (?1, ?2, ?3, ?4)",
+        )
+          .bind(accountId, phone, category, score)
+          .run();
+        logs.push(`[insert] ${phone} -> ${category}`);
+      }
+      updated++;
+    } catch (e) {
+      logs.push(`[error] ${phone}/${category} ${(e as any).message}`);
+    }
+  }
+  return jsonResponse({ updated, logs });
 });
 
 // Analytics summary
