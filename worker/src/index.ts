@@ -617,6 +617,9 @@ router.post("/campaigns/:id/start", async ({ params, request }, env: Env) => {
 
   const data = await resp.json().catch(() => ({}));
   console.log("execute_campaign response data:", data);
+  if (data && data.categorization) {
+    console.log("categorization summary from python", data.categorization);
+  }
   if (!resp.ok) {
     console.error("Python API returned error:", data);
     return jsonResponse({ error: "python error", details: data }, resp.status);
@@ -718,6 +721,9 @@ router.post("/campaigns/:id/update", async ({ params, request }, env: Env) => {
     });
     
     const data = await resp.json();
+    if (data && data.categorization) {
+      console.log("categorization summary from python", data.categorization);
+    }
     if (!resp.ok) {
       return jsonResponse({ error: "python error", details: data }, resp.status);
     }

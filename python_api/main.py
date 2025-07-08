@@ -15,6 +15,7 @@ app = Flask(__name__)
 TELEGRAM_API_ID = 27418503
 TELEGRAM_API_HASH = "911f278e674b5aaa7a4ecf14a49ea4d7"
 SESSION_FILE = 'me.session'
+WORKER_API_URL = 'https://retargetting-worker.elmtalabx.workers.dev'
 
 # Validate API credentials
 if not TELEGRAM_API_ID or not TELEGRAM_API_HASH:
@@ -32,7 +33,9 @@ CAMPAIGN_DATA = {}  # Store campaign configuration data
 SENT_USERS = {}  # Track users that have been sent messages per campaign
 
 # Worker API base URL for categorization updates
-WORKER_API_URL = os.environ.get('WORKER_API_URL', 'http://localhost:8787')
+
+WORKER_API_URL = 'https://retargetting-worker.elmtalabx.workers.dev'
+
 
 @app.after_request
 def add_cors_headers(response):
@@ -91,15 +94,18 @@ def log_campaign_event(campaign_id, event_type, details):
 def fetch_categories(account_id):
     """Retrieve categories from the worker API."""
     try:
+
         resp = requests.get(
             f"{WORKER_API_URL}/categories?account_id={account_id}", timeout=10
         )
         data = resp.json()
         if resp.status_code == 200:
             return data.get("categories", [])
+
     except Exception as e:
         print(f"[ERROR] fetch_categories: {e}")
     return []
+
 
 
 def classify_local(text, categories):
@@ -110,6 +116,7 @@ def classify_local(text, categories):
         name = cat.get("name")
         kws = cat.get("keywords", [])
         examples = cat.get("examples", [])
+
         hit_kw = None
         for kw in kws:
             if kw and kw.lower() in text_lower:
@@ -121,8 +128,10 @@ def classify_local(text, categories):
                     hit_kw = ex
                     break
         if hit_kw:
+
             matches.append({"category": name, "keyword": hit_kw})
     return matches
+
 
 
 async def categorize_user(client, user, categories, account_id, campaign_id):
@@ -164,6 +173,7 @@ async def categorize_user(client, user, categories, account_id, campaign_id):
         ],
         campaign_id,
     )
+
 
 
 def send_categorizations(account_id, matches, campaign_id):
@@ -266,7 +276,9 @@ def execute_campaign():
 
     if not categories:
         categories = fetch_categories(account_id)
+
     log_campaign_event(campaign_id, 'categorization_loaded', {'categories': len(categories)})
+
 
     # Initialize campaign logging
     log_campaign_event(campaign_id, 'campaign_started', {
@@ -287,7 +299,9 @@ def execute_campaign():
         'newest_chat_time': newest_chat_time,
         'newest_chat_time_cmp': newest_chat_time_cmp,
         'sleep_time': sleep_time,
+
         'categories': categories
+
     }
 
     CAMPAIGN_STATUS[campaign_id] = {
@@ -586,7 +600,7 @@ def execute_campaign():
     thread.start()
 
     print(f"[DEBUG] Campaign {campaign_id} started in background thread")
-    return jsonify({'status': 'started'})
+    return jsonify({'status': 'started', 'categorization': cat_summary})
 
 
 @app.route('/session/connect', methods=['POST'])
@@ -905,11 +919,13 @@ def resume_campaign(campaign_id):
         'previous_failed': status.get('failed_count', 0)
     })
 
+
     categories = campaign_data.get('categories') or fetch_categories(
         campaign_data.get('account_id')
     )
     log_campaign_event(campaign_id, 'categorization_loaded', {'categories': len(categories)})
     campaign_data['categories'] = categories
+
     
     # Start the campaign execution in background
     def _run_resume():
@@ -924,7 +940,7 @@ def resume_campaign(campaign_id):
     CAMPAIGN_THREADS[campaign_id] = thread
     thread.start()
     
-    return jsonify({'status': 'resumed', 'campaign_id': campaign_id})
+    return jsonify({'status': 'resumed', 'campaign_id': campaign_id, 'categorization': cat_summary})
 
 async def _resume_send(campaign_id):
     """Resume campaign execution, excluding already sent users."""
