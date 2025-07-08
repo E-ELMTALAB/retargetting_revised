@@ -15,7 +15,7 @@ app = Flask(__name__)
 TELEGRAM_API_ID = 27418503
 TELEGRAM_API_HASH = "911f278e674b5aaa7a4ecf14a49ea4d7"
 SESSION_FILE = 'me.session'
-WORKER_API_URL = os.environ.get('https://retargetting-worker.elmtalabx.workers.dev')
+WORKER_API_URL = 'https://retargetting-worker.elmtalabx.workers.dev'
 
 # Validate API credentials
 if not TELEGRAM_API_ID or not TELEGRAM_API_HASH:
@@ -33,7 +33,7 @@ CAMPAIGN_DATA = {}  # Store campaign configuration data
 SENT_USERS = {}  # Track users that have been sent messages per campaign
 
 # Worker API base URL for categorization updates
-WORKER_API_URL = os.environ.get('https://retargetting-worker.elmtalabx.workers.dev')
+WORKER_API_URL = 'https://retargetting-worker.elmtalabx.workers.dev'
 
 @app.after_request
 def add_cors_headers(response):
