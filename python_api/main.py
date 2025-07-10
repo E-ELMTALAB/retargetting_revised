@@ -146,6 +146,7 @@ async def categorize_user(client, user, categories, account_id, campaign_id):
         {"phone": phone, "username": getattr(user, "username", None)},
     )
 
+
     # Log keywords for each category so we can compare later
     cat_kw = {
         cat.get("name"): [kw for kw in cat.get("keywords", []) if kw]
@@ -156,6 +157,7 @@ async def categorize_user(client, user, categories, account_id, campaign_id):
         "categorization_keywords",
         {"phone": phone, "categories": cat_kw},
     )
+
 
     msgs = []
     try:
@@ -173,7 +175,9 @@ async def categorize_user(client, user, categories, account_id, campaign_id):
     log_campaign_event(
         campaign_id,
         "categorization_fetched_messages",
+
         {"phone": phone, "count": len(msgs), "messages": msgs},
+
     )
 
     text = " \n".join(msgs)
