@@ -94,16 +94,45 @@ def log_campaign_event(campaign_id, event_type, details):
 def fetch_categories(account_id):
     """Retrieve categories from the worker API."""
     try:
-
         resp = requests.get(
             f"{WORKER_API_URL}/categories?account_id={account_id}", timeout=10
         )
         data = resp.json()
         if resp.status_code == 200:
-            categories = data.get("categories", [])
-            print(f"[DEBUG] Loaded {len(categories)} categories from DB")
-            print(f"[DEBUG] Categories detail: {categories}")
-            return categories
+            raw_cats = data.get("categories", [])
+            formatted = []
+            for c in raw_cats:
+                # Worker returns JSON strings; convert to lists
+                keywords = c.get("keywords") or c.get("keywords_json")
+                if isinstance(keywords, str):
+                    try:
+                        keywords = json.loads(keywords)
+                    except Exception:
+                        keywords = []
+                if not isinstance(keywords, list):
+                    keywords = []
+
+                examples = c.get("examples") or c.get("sample_chats_json")
+                if isinstance(examples, str):
+                    try:
+                        examples = json.loads(examples)
+                    except Exception:
+                        examples = []
+                if not isinstance(examples, list):
+                    examples = []
+
+                formatted.append(
+                    {
+                        "name": c.get("name"),
+                        "keywords": keywords,
+                        "examples": examples,
+                        "regex": c.get("regex_pattern") or c.get("regex"),
+                    }
+                )
+
+            print(f"[DEBUG] Loaded {len(formatted)} categories from DB")
+            print(f"[DEBUG] Categories detail: {formatted}")
+            return formatted
 
     except Exception as e:
         print(f"[ERROR] fetch_categories: {e}")
