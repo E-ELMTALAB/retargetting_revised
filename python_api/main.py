@@ -100,7 +100,10 @@ def fetch_categories(account_id):
         )
         data = resp.json()
         if resp.status_code == 200:
-            return data.get("categories", [])
+            categories = data.get("categories", [])
+            print(f"[DEBUG] Loaded {len(categories)} categories from DB")
+            print(f"[DEBUG] Categories detail: {categories}")
+            return categories
 
     except Exception as e:
         print(f"[ERROR] fetch_categories: {e}")
@@ -143,6 +146,19 @@ async def categorize_user(client, user, categories, account_id, campaign_id):
         {"phone": phone, "username": getattr(user, "username", None)},
     )
 
+
+    # Log keywords for each category so we can compare later
+    cat_kw = {
+        cat.get("name"): [kw for kw in cat.get("keywords", []) if kw]
+        for cat in categories
+    }
+    log_campaign_event(
+        campaign_id,
+        "categorization_keywords",
+        {"phone": phone, "categories": cat_kw},
+    )
+
+
     msgs = []
     try:
         async for msg in client.iter_messages(user, limit=20):
@@ -159,7 +175,9 @@ async def categorize_user(client, user, categories, account_id, campaign_id):
     log_campaign_event(
         campaign_id,
         "categorization_fetched_messages",
-        {"phone": phone, "count": len(msgs)},
+
+        {"phone": phone, "count": len(msgs), "messages": msgs},
+
     )
 
     text = " \n".join(msgs)
@@ -302,7 +320,17 @@ def execute_campaign():
     if not categories:
         categories = fetch_categories(account_id)
 
-    log_campaign_event(campaign_id, 'categorization_loaded', {'categories': len(categories)})
+    log_campaign_event(
+        campaign_id,
+        'categorization_loaded',
+        {
+            'categories': len(categories),
+            'details': [
+                {'name': c.get('name'), 'keywords': c.get('keywords', [])}
+                for c in categories
+            ],
+        },
+    )
 
 
     # Initialize campaign logging
@@ -404,6 +432,10 @@ def execute_campaign():
                         chat_start_dt = chat_start
                         filter_dt = datetime.fromisoformat(chat_start_time)
                         if chat_start_dt:
+                            if chat_start_dt.tzinfo:
+                                chat_start_dt = chat_start_dt.replace(tzinfo=None)
+                            if filter_dt.tzinfo:
+                                filter_dt = filter_dt.replace(tzinfo=None)
                             if chat_start_time_cmp == 'after' and chat_start_dt < filter_dt:
                                 continue
                             if chat_start_time_cmp == 'before' and chat_start_dt > filter_dt:
@@ -417,6 +449,10 @@ def execute_campaign():
                         newest_dt = last_message_time
                         filter_dt = datetime.fromisoformat(newest_chat_time)
                         if newest_dt:
+                            if newest_dt.tzinfo:
+                                newest_dt = newest_dt.replace(tzinfo=None)
+                            if filter_dt.tzinfo:
+                                filter_dt = filter_dt.replace(tzinfo=None)
                             if newest_chat_time_cmp == 'after' and newest_dt < filter_dt:
                                 continue
                             if newest_chat_time_cmp == 'before' and newest_dt > filter_dt:
@@ -616,7 +652,7 @@ def execute_campaign():
     thread.start()
 
     print(f"[DEBUG] Campaign {campaign_id} started in background thread")
-    return jsonify({'status': 'started', 'categorization': cat_summary})
+    return jsonify({'status': 'started'})
 
 
 @app.route('/session/connect', methods=['POST'])
@@ -944,7 +980,17 @@ def resume_campaign(campaign_id):
     categories = campaign_data.get('categories') or fetch_categories(
         campaign_data.get('account_id')
     )
-    log_campaign_event(campaign_id, 'categorization_loaded', {'categories': len(categories)})
+    log_campaign_event(
+        campaign_id,
+        'categorization_loaded',
+        {
+            'categories': len(categories),
+            'details': [
+                {'name': c.get('name'), 'keywords': c.get('keywords', [])}
+                for c in categories
+            ],
+        },
+    )
     campaign_data['categories'] = categories
 
     
@@ -961,7 +1007,7 @@ def resume_campaign(campaign_id):
     CAMPAIGN_THREADS[campaign_id] = thread
     thread.start()
     
-    return jsonify({'status': 'resumed', 'campaign_id': campaign_id, 'categorization': cat_summary})
+    return jsonify({'status': 'resumed', 'campaign_id': campaign_id})
 
 async def _resume_send(campaign_id):
     """Resume campaign execution, excluding already sent users."""
@@ -1022,6 +1068,10 @@ async def _resume_send(campaign_id):
                         chat_start_dt = chat_start
                         filter_dt = datetime.fromisoformat(campaign_data['chat_start_time'])
                         if chat_start_dt:
+                            if chat_start_dt.tzinfo:
+                                chat_start_dt = chat_start_dt.replace(tzinfo=None)
+                            if filter_dt.tzinfo:
+                                filter_dt = filter_dt.replace(tzinfo=None)
                             if campaign_data['chat_start_time_cmp'] == 'after' and chat_start_dt < filter_dt:
                                 continue
                             if campaign_data['chat_start_time_cmp'] == 'before' and chat_start_dt > filter_dt:
@@ -1035,6 +1085,10 @@ async def _resume_send(campaign_id):
                         newest_dt = last_message_time
                         filter_dt = datetime.fromisoformat(campaign_data['newest_chat_time'])
                         if newest_dt:
+                            if newest_dt.tzinfo:
+                                newest_dt = newest_dt.replace(tzinfo=None)
+                            if filter_dt.tzinfo:
+                                filter_dt = filter_dt.replace(tzinfo=None)
                             if campaign_data['newest_chat_time_cmp'] == 'after' and newest_dt < filter_dt:
                                 continue
                             if campaign_data['newest_chat_time_cmp'] == 'before' and newest_dt > filter_dt:
