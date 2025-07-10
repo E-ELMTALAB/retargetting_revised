@@ -92,3 +92,12 @@ CREATE TABLE pending_sessions (
     phone_code_hash TEXT,
     FOREIGN KEY (account_id) REFERENCES accounts(id)
 );
+
+-- Keep track of which users have been sent messages in each campaign
+CREATE TABLE campaign_sent (
+    campaign_id INTEGER NOT NULL,
+    user_id TEXT NOT NULL,
+    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (campaign_id, user_id),
+    FOREIGN KEY (campaign_id) REFERENCES campaigns(id)
+);
