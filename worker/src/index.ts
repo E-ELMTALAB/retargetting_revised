@@ -99,6 +99,13 @@ CREATE TABLE IF NOT EXISTS pending_sessions (
     phone_code_hash TEXT,
     FOREIGN KEY (account_id) REFERENCES accounts(id)
 );
+CREATE TABLE IF NOT EXISTS campaign_sent (
+    campaign_id INTEGER NOT NULL,
+    user_id TEXT NOT NULL,
+    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (campaign_id, user_id),
+    FOREIGN KEY (campaign_id) REFERENCES campaigns(id)
+);
 `;
 
 async function ensureSchema(db: D1Database) {
@@ -156,6 +163,16 @@ function jsonResponse(obj: any, status = 200) {
     status,
     headers: { "Content-Type": "application/json", ...corsHeaders },
   });
+}
+
+function safeParseJSON(str: any) {
+  if (!str) return [];
+  try {
+    const parsed = JSON.parse(str);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
 }
 
 interface Chat {
@@ -493,8 +510,19 @@ router.get("/session/status", async (request: Request, env: Env) => {
 
 // Campaign creation placeholder
 router.post("/campaigns", async (request: Request, env: Env) => {
-  const { account_id, telegram_session_id, message_text, chat_start_time, chat_start_time_cmp, newest_chat_time, newest_chat_time_cmp, sleep_time, limit } =
-    (await request.json()) as any;
+  const {
+    account_id,
+    telegram_session_id,
+    message_text,
+    chat_start_time,
+    chat_start_time_cmp,
+    newest_chat_time,
+    newest_chat_time_cmp,
+    sleep_time,
+    limit,
+    include_categories,
+    exclude_categories,
+  } = (await request.json()) as any;
   console.log("POST /campaigns", { account_id, telegram_session_id });
   const accountId = Number(account_id || 0);
   if (!accountId || !telegram_session_id || !message_text) {
@@ -508,6 +536,12 @@ router.post("/campaigns", async (request: Request, env: Env) => {
     newest_chat_time_cmp,
     sleep_time,
     ...(limit ? { limit: Number(limit) } : {}),
+    ...(Array.isArray(include_categories) && include_categories.length
+      ? { include_categories }
+      : {}),
+    ...(Array.isArray(exclude_categories) && exclude_categories.length
+      ? { exclude_categories }
+      : {}),
   };
   const res = await env.DB.prepare(
     "INSERT INTO campaigns (account_id, telegram_session_id, message_text, status, filters_json) VALUES (?1, ?2, ?3, ?4, ?5)",
@@ -808,8 +842,26 @@ router.get("/categories", async (request: Request, env: Env) => {
     )
       .bind(accountId)
       .all();
-    logs.push(`categories results: ${JSON.stringify(results)}`);
-    return new Response(JSON.stringify({ categories: results, logs }), {
+    const categories = (Array.isArray(results) ? results : results.results || []).map(
+      (c: any) => ({
+        id: c.id,
+        name: c.name,
+        description: c.description,
+        regex: c.regex_pattern,
+        keywords: safeParseJSON(c.keywords_json),
+        examples: safeParseJSON(c.sample_chats_json),
+      }),
+    );
+    categories.push({
+      id: 0,
+      name: "Other",
+      description: "Chats not matching any category",
+      regex: null,
+      keywords: [],
+      examples: [],
+    });
+    logs.push(`categories results: ${JSON.stringify(categories)}`);
+    return new Response(JSON.stringify({ categories, logs }), {
       headers: { "Content-Type": "application/json", ...corsHeaders },
     });
   } catch (err) {
@@ -1113,6 +1165,37 @@ const campaignStatusHandler = async ({ params }: { params: any }, env: Env) => {
 };
 router.get("/campaigns/:id/status", campaignStatusHandler);
 router.get("/campaigns/:id/status/", campaignStatusHandler);
+
+// Record that a user was sent a message in a campaign
+router.post("/campaigns/:id/sent", async ({ params, request }, env: Env) => {
+  const campaignId = Number(params?.id || 0);
+  if (!campaignId) return jsonResponse({ error: "invalid id" }, 400);
+  let body: any = {};
+  try {
+    body = await request.json();
+  } catch {}
+  const userId = String(body?.user_id || "");
+  if (!userId) return jsonResponse({ error: "user_id required" }, 400);
+  await env.DB.prepare(
+    "INSERT OR IGNORE INTO campaign_sent (campaign_id, user_id) VALUES (?1, ?2)"
+  )
+    .bind(campaignId, userId)
+    .run();
+  return jsonResponse({ logged: true });
+});
+
+// Retrieve list of users already sent in a campaign
+router.get("/campaigns/:id/sent", async ({ params }, env: Env) => {
+  const campaignId = Number(params?.id || 0);
+  if (!campaignId) return jsonResponse({ error: "invalid id" }, 400);
+  const rowsRes = await env.DB.prepare(
+    "SELECT user_id FROM campaign_sent WHERE campaign_id=?1"
+  )
+    .bind(campaignId)
+    .all();
+  const rows = Array.isArray(rowsRes) ? rowsRes : rowsRes.results || [];
+  return jsonResponse({ users: rows.map((r: any) => r.user_id) });
+});
 
 // Debug endpoint to check recipients and add test data
 router.get("/debug/recipients", async (request: Request, env: Env) => {

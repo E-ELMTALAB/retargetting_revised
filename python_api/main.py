@@ -219,7 +219,7 @@ async def categorize_user(client, user, categories, account_id, campaign_id):
     )
 
     if not res:
-        return
+        return []
 
     for m in res:
         log_campaign_event(
@@ -240,6 +240,8 @@ async def categorize_user(client, user, categories, account_id, campaign_id):
         ],
         campaign_id,
     )
+
+    return [m["category"] for m in res]
 
 
 
@@ -264,6 +266,35 @@ def send_categorizations(account_id, matches, campaign_id):
         log_campaign_event(campaign_id, 'worker_categorize_error', {'error': str(e)})
         print(f"[ERROR] send_categorizations: {e}")
         return {'error': str(e)}
+
+
+def log_sent_user(campaign_id, user_id):
+    """Notify the worker that a user was sent a campaign message."""
+    try:
+        requests.post(
+            f"{WORKER_API_URL}/campaigns/{campaign_id}/sent",
+            json={"user_id": user_id},
+            timeout=10,
+        )
+    except Exception as e:
+        print(f"[ERROR] log_sent_user: {e}")
+
+
+def fetch_sent_users(campaign_id):
+    """Retrieve already sent users for a campaign from the worker."""
+    try:
+        resp = requests.get(
+            f"{WORKER_API_URL}/campaigns/{campaign_id}/sent",
+            timeout=10,
+        )
+        data = resp.json()
+        if resp.status_code == 200:
+            users = data.get("users", [])
+            if isinstance(users, list):
+                return set(str(u) for u in users)
+    except Exception as e:
+        print(f"[ERROR] fetch_sent_users: {e}")
+    return set()
 
 
 @app.route('/health', methods=['GET'])
@@ -310,6 +341,8 @@ def execute_campaign():
     newest_chat_time_cmp = payload.get('newest_chat_time_cmp', 'after')  # 'after' or 'before'
     sleep_time = payload.get('sleep_time', 1)
     categories = payload.get('categories')
+    include_categories = payload.get('include_categories') or []
+    exclude_categories = payload.get('exclude_categories') or []
     try:
         sleep_time = float(sleep_time)
         if sleep_time < 0:
@@ -333,6 +366,14 @@ def execute_campaign():
         except (TypeError, ValueError):
             target_recipients = None
 
+    if not isinstance(include_categories, list):
+        include_categories = []
+    include_categories = [str(c) for c in include_categories if c]
+
+    if not isinstance(exclude_categories, list):
+        exclude_categories = []
+    exclude_categories = [str(c) for c in exclude_categories if c]
+
 
     print(f"[DEBUG] Parsed parameters:")
     print(f"  - session_str: {session_str[:50] + '...' if session_str else 'None'}")
@@ -346,6 +387,8 @@ def execute_campaign():
     print(f"  - newest_chat_time: {newest_chat_time}")
     print(f"  - newest_chat_time_cmp: {newest_chat_time_cmp}")
     print(f"  - sleep_time: {sleep_time}")
+    print(f"  - include_categories: {include_categories}")
+    print(f"  - exclude_categories: {exclude_categories}")
 
     if not session_str or not message:
         print("[ERROR] Missing required parameters")
@@ -394,7 +437,9 @@ def execute_campaign():
 
         'target_recipients': target_recipients,
 
-        'categories': categories
+        'categories': categories,
+        'include_categories': include_categories,
+        'exclude_categories': exclude_categories,
 
     }
 
@@ -407,13 +452,16 @@ def execute_campaign():
         'current_recipient': None
     }
     STOP_FLAGS[campaign_id] = False
-    
+
     # Initialize sent users tracking for this campaign
     SENT_USERS[campaign_id] = set()
 
     async def _send():
         print(f"[DEBUG] Starting _send function for campaign {campaign_id}")
         client = get_telegram_client(session_str)
+
+        include_categories = set(CAMPAIGN_DATA[campaign_id].get('include_categories', []))
+        exclude_categories = set(CAMPAIGN_DATA[campaign_id].get('exclude_categories', []))
         
         try:
             log_campaign_event(campaign_id, 'client_connecting', {'session_preview': session_str[:20] + '...'})
@@ -524,7 +572,39 @@ def execute_campaign():
                     'name': user_info.strip() or 'Unknown'
                 })
 
-                await categorize_user(client, user, categories, account_id, campaign_id)
+                match_names = await categorize_user(client, user, categories, account_id, campaign_id)
+
+                match_set = set(match_names or [])
+                is_other = len(match_set) == 0
+
+                if include_categories:
+                    if is_other:
+                        if 'Other' not in include_categories:
+                            log_campaign_event(campaign_id, 'category_filtered', {
+                                'recipient': f"{user.username or user.id}",
+                                'matches': []
+                            })
+                            continue
+                    elif not match_set.intersection(include_categories):
+                        log_campaign_event(campaign_id, 'category_filtered', {
+                            'recipient': f"{user.username or user.id}",
+                            'matches': list(match_set)
+                        })
+                        continue
+
+                if exclude_categories:
+                    if is_other and 'Other' in exclude_categories:
+                        log_campaign_event(campaign_id, 'category_filtered', {
+                            'recipient': f"{user.username or user.id}",
+                            'matches': []
+                        })
+                        continue
+                    if match_set.intersection(exclude_categories):
+                        log_campaign_event(campaign_id, 'category_filtered', {
+                            'recipient': f"{user.username or user.id}",
+                            'matches': list(match_set)
+                        })
+                        continue
 
                 try:
                     # await client.send_message(user, message)
@@ -532,6 +612,7 @@ def execute_campaign():
                     # Mark user as sent
                     user_id = str(user.id)
                     SENT_USERS[campaign_id].add(user_id)
+                    log_sent_user(campaign_id, user_id)
 
                     CAMPAIGN_STATUS[campaign_id]['sent_count'] += 1
                     log_campaign_event(campaign_id, 'message_sent', {
@@ -563,6 +644,7 @@ def execute_campaign():
                     try:
                         # await client.send_message(user, message)
                         CAMPAIGN_STATUS[campaign_id]['sent_count'] += 1
+                        log_sent_user(campaign_id, user_id)
                         log_campaign_event(campaign_id, 'message_sent_after_flood_wait', {
                             'recipient': f"{user.username or user.id}",
                             'success': True
@@ -1065,6 +1147,12 @@ async def _resume_send(campaign_id):
     message = campaign_data.get('message')
     limit = campaign_data.get('limit')
     target_recipients = campaign_data.get('target_recipients')
+    include_categories = set(campaign_data.get('include_categories', []))
+    exclude_categories = set(campaign_data.get('exclude_categories', []))
+    categories = campaign_data.get('categories') or fetch_categories(
+        campaign_data.get('account_id')
+    )
+    campaign_data['categories'] = categories
     
     if not session_str or not message:
         log_campaign_event(campaign_id, 'resume_failed', {'error': 'Missing session or message'})
@@ -1078,9 +1166,10 @@ async def _resume_send(campaign_id):
         log_campaign_event(campaign_id, 'resume_client_connecting', {})
         await client.connect()
         log_campaign_event(campaign_id, 'resume_client_connected', {})
-        
+
         # Get already sent users for this campaign
-        sent_users = SENT_USERS.get(campaign_id, set())
+        sent_users = fetch_sent_users(campaign_id)
+        SENT_USERS[campaign_id] = set(sent_users)
         print(f"[DEBUG] Campaign {campaign_id} has {len(sent_users)} already sent users")
         
         total_dialogs = 0
@@ -1155,7 +1244,39 @@ async def _resume_send(campaign_id):
                     'message_preview': message[:50] + '...' if len(message) > 50 else message
                 })
 
-                await categorize_user(client, user, categories, campaign_data.get('account_id'), campaign_id)
+                match_names = await categorize_user(client, user, categories, campaign_data.get('account_id'), campaign_id)
+
+                match_set = set(match_names or [])
+                is_other = len(match_set) == 0
+
+                if include_categories:
+                    if is_other:
+                        if 'Other' not in include_categories:
+                            log_campaign_event(campaign_id, 'category_filtered', {
+                                'recipient': f"{user.username or user.id}",
+                                'matches': []
+                            })
+                            continue
+                    elif not match_set.intersection(include_categories):
+                        log_campaign_event(campaign_id, 'category_filtered', {
+                            'recipient': f"{user.username or user.id}",
+                            'matches': list(match_set)
+                        })
+                        continue
+
+                if exclude_categories:
+                    if is_other and 'Other' in exclude_categories:
+                        log_campaign_event(campaign_id, 'category_filtered', {
+                            'recipient': f"{user.username or user.id}",
+                            'matches': []
+                        })
+                        continue
+                    if match_set.intersection(exclude_categories):
+                        log_campaign_event(campaign_id, 'category_filtered', {
+                            'recipient': f"{user.username or user.id}",
+                            'matches': list(match_set)
+                        })
+                        continue
 
                 try:
                     # await client.send_message(user, message)
@@ -1165,6 +1286,7 @@ async def _resume_send(campaign_id):
                     if campaign_id not in SENT_USERS:
                         SENT_USERS[campaign_id] = set()
                     SENT_USERS[campaign_id].add(user_id)
+                    log_sent_user(campaign_id, user_id)
 
                     CAMPAIGN_STATUS[campaign_id]['sent_count'] += 1
                     log_campaign_event(campaign_id, 'resume_message_sent', {
