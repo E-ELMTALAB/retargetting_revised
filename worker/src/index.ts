@@ -801,29 +801,42 @@ router.post("/campaigns/:id/resume", async ({ params }, env: Env) => {
   let row: any;
   try {
     row = await env.DB.prepare(
-      `SELECT c.account_id, t.encrypted_session_data FROM campaigns c JOIN telegram_sessions t ON c.telegram_session_id=t.id WHERE c.id=?1`,
+      `SELECT c.id, c.account_id, c.message_text, c.filters_json, t.encrypted_session_data
+       FROM campaigns c JOIN telegram_sessions t ON c.telegram_session_id=t.id
+       WHERE c.id=?1`,
     )
       .bind(id)
       .first();
   } catch {}
 
-  // Categorization now handled by Python API
+  let filters: any = {};
+  try {
+    filters = row && row.filters_json ? JSON.parse(row.filters_json) : {};
+  } catch {}
 
   try {
     const resp = await fetch(`${env.PYTHON_API_URL}/resume_campaign/${id}`, {
       method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        session: row?.encrypted_session_data,
+        message: row?.message_text,
+        account_id: row?.account_id,
+        campaign_id: id,
+        ...filters,
+      }),
     });
-    
-    const data: any = await resp.json();
+
+    const data = await resp.json();
+
     if (!resp.ok) {
       return jsonResponse({ error: "python error", details: data }, resp.status);
     }
-    
-    // Update campaign status in DB
+
     await env.DB.prepare("UPDATE campaigns SET status=?1 WHERE id=?2")
       .bind("running", id)
       .run();
-    
+
     return jsonResponse(data);
   } catch (err) {
     console.error("resume campaign error", err);

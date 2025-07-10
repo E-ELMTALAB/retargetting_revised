@@ -1073,11 +1073,36 @@ def update_campaign(campaign_id):
 def resume_campaign(campaign_id):
     """Resume a stopped campaign, excluding already sent users."""
     print(f"[DEBUG] Resuming campaign {campaign_id}")
-    
+
+    payload = request.get_json(silent=True) or {}
+
     if campaign_id not in CAMPAIGN_DATA:
-        return jsonify({'error': 'Campaign data not found'}), 404
-    
+        session_str = payload.get('session')
+        message = payload.get('message')
+        account_id = payload.get('account_id')
+        if not session_str or not message or account_id is None:
+            return jsonify({'error': 'Campaign data not found'}), 404
+        include_categories = payload.get('include_categories') or []
+        exclude_categories = payload.get('exclude_categories') or []
+        CAMPAIGN_DATA[campaign_id] = {
+            'session': session_str,
+            'message': message,
+            'account_id': account_id,
+            'limit': payload.get('limit'),
+            'target_recipients': payload.get('target_recipients'),
+            'chat_start_time': payload.get('chat_start_time'),
+            'chat_start_time_cmp': payload.get('chat_start_time_cmp', 'after'),
+            'newest_chat_time': payload.get('newest_chat_time'),
+            'newest_chat_time_cmp': payload.get('newest_chat_time_cmp', 'after'),
+            'sleep_time': payload.get('sleep_time', 1),
+            'include_categories': include_categories,
+            'exclude_categories': exclude_categories,
+        }
     campaign_data = CAMPAIGN_DATA[campaign_id]
+    if 'include_categories' in payload:
+        campaign_data['include_categories'] = payload.get('include_categories') or []
+    if 'exclude_categories' in payload:
+        campaign_data['exclude_categories'] = payload.get('exclude_categories') or []
     status = CAMPAIGN_STATUS.get(campaign_id, {})
     
     if status.get('status') == 'running':
