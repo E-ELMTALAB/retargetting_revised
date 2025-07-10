@@ -876,14 +876,19 @@ def update_campaign(campaign_id):
         payload = request.get_json(force=True)
         print(f"[DEBUG] Updating campaign {campaign_id} with data: {payload}")
         
-        # Store the updated campaign data
-        CAMPAIGN_DATA[campaign_id] = {
-            'message': payload.get('message'),
-            'limit': payload.get('limit'),
-            'account_id': payload.get('account_id'),
-            'session': payload.get('session'),
-            'updated_at': datetime.now().isoformat()
-        }
+        # Update existing campaign data instead of replacing it entirely
+        if campaign_id not in CAMPAIGN_DATA:
+            CAMPAIGN_DATA[campaign_id] = {}
+        data = CAMPAIGN_DATA[campaign_id]
+        if 'message' in payload and payload.get('message') is not None:
+            data['message'] = payload.get('message')
+        if 'limit' in payload:
+            data['limit'] = payload.get('limit')
+        if 'account_id' in payload and payload.get('account_id') is not None:
+            data['account_id'] = payload.get('account_id')
+        if 'session' in payload and payload.get('session') is not None:
+            data['session'] = payload.get('session')
+        data['updated_at'] = datetime.now().isoformat()
         
         # Update campaign status to indicate it's been modified
         if campaign_id in CAMPAIGN_STATUS:

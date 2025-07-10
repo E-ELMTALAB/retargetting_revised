@@ -493,7 +493,7 @@ router.get("/session/status", async (request: Request, env: Env) => {
 
 // Campaign creation placeholder
 router.post("/campaigns", async (request: Request, env: Env) => {
-  const { account_id, telegram_session_id, message_text, chat_start_time, chat_start_time_cmp, newest_chat_time, newest_chat_time_cmp, sleep_time } =
+  const { account_id, telegram_session_id, message_text, chat_start_time, chat_start_time_cmp, newest_chat_time, newest_chat_time_cmp, sleep_time, limit } =
     (await request.json()) as any;
   console.log("POST /campaigns", { account_id, telegram_session_id });
   const accountId = Number(account_id || 0);
@@ -507,6 +507,7 @@ router.post("/campaigns", async (request: Request, env: Env) => {
     newest_chat_time,
     newest_chat_time_cmp,
     sleep_time,
+    ...(limit ? { limit: Number(limit) } : {}),
   };
   const res = await env.DB.prepare(
     "INSERT INTO campaigns (account_id, telegram_session_id, message_text, status, filters_json) VALUES (?1, ?2, ?3, ?4, ?5)",
@@ -560,19 +561,16 @@ router.post("/campaigns/:id/start", async ({ params, request }, env: Env) => {
   }
 
 
-  let limit: number | undefined;
-  try {
-    const body = await request.json();
-    limit = Number(body?.limit);
-    if (!Number.isFinite(limit) || limit <= 0) limit = undefined;
-  } catch (err) {
-    limit = undefined;
-  }
-
-  let filters = {};
+  let filters: any = {};
   try {
     filters = row.filters_json ? JSON.parse(row.filters_json) : {};
   } catch {}
+
+  let limit: number | undefined;
+  if (filters && typeof filters.limit !== "undefined") {
+    limit = Number(filters.limit);
+    if (!Number.isFinite(limit) || limit <= 0) limit = undefined;
+  }
 
   // Log the request being sent to Python API
   const requestBody = {
@@ -719,6 +717,30 @@ router.post("/campaigns/:id/update", async ({ params, request }, env: Env) => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
+
+    // persist limit in DB
+    let row: any;
+    try {
+      row = await env.DB.prepare(
+        "SELECT filters_json, message_text FROM campaigns WHERE id=?1",
+      )
+        .bind(id)
+        .first();
+    } catch {}
+    let filters: any = {};
+    try { filters = row && row.filters_json ? JSON.parse(row.filters_json) : {}; } catch {}
+    if ("limit" in body) {
+      if (body.limit === undefined || body.limit === null || Number(body.limit) <= 0) {
+        delete filters.limit;
+      } else {
+        filters.limit = Number(body.limit);
+      }
+    }
+    await env.DB.prepare(
+      "UPDATE campaigns SET message_text=?1, filters_json=?2 WHERE id=?3",
+    )
+      .bind(body.message || (row ? row.message_text : null), JSON.stringify(filters), id)
+      .run();
     
     const data = await resp.json();
     if (data && data.categorization) {
