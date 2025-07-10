@@ -135,8 +135,14 @@ def classify_local(text, categories):
 
 
 async def categorize_user(client, user, categories, account_id, campaign_id):
-    """Classify a single user's chat history and upload matches."""
+    """Classify a single user's chat history and upload matches with verbose logging."""
     phone = getattr(user, "phone", None) or str(user.id)
+    log_campaign_event(
+        campaign_id,
+        "categorization_start",
+        {"phone": phone, "username": getattr(user, "username", None)},
+    )
+
     msgs = []
     try:
         async for msg in client.iter_messages(user, limit=20):
@@ -150,10 +156,24 @@ async def categorize_user(client, user, categories, account_id, campaign_id):
         )
         return
 
+    log_campaign_event(
+        campaign_id,
+        "categorization_fetched_messages",
+        {"phone": phone, "count": len(msgs)},
+    )
+
     text = " \n".join(msgs)
     res = classify_local(text, categories)
+
+    log_campaign_event(
+        campaign_id,
+        "categorization_result",
+        {"phone": phone, "matches": res},
+    )
+
     if not res:
         return
+
     for m in res:
         log_campaign_event(
             campaign_id,
@@ -180,6 +200,11 @@ def send_categorizations(account_id, matches, campaign_id):
     if not matches:
         return {'updated': 0}
     try:
+        log_campaign_event(
+            campaign_id,
+            'worker_categorize_request',
+            {'matches': matches},
+        )
         resp = requests.post(
             f"{WORKER_API_URL}/categorize",
             json={'account_id': account_id, 'matches': matches},
