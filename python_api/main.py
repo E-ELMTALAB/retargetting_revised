@@ -94,16 +94,45 @@ def log_campaign_event(campaign_id, event_type, details):
 def fetch_categories(account_id):
     """Retrieve categories from the worker API."""
     try:
-
         resp = requests.get(
             f"{WORKER_API_URL}/categories?account_id={account_id}", timeout=10
         )
         data = resp.json()
         if resp.status_code == 200:
-            categories = data.get("categories", [])
-            print(f"[DEBUG] Loaded {len(categories)} categories from DB")
-            print(f"[DEBUG] Categories detail: {categories}")
-            return categories
+            raw_cats = data.get("categories", [])
+            formatted = []
+            for c in raw_cats:
+                # Worker returns JSON strings; convert to lists
+                keywords = c.get("keywords") or c.get("keywords_json")
+                if isinstance(keywords, str):
+                    try:
+                        keywords = json.loads(keywords)
+                    except Exception:
+                        keywords = []
+                if not isinstance(keywords, list):
+                    keywords = []
+
+                examples = c.get("examples") or c.get("sample_chats_json")
+                if isinstance(examples, str):
+                    try:
+                        examples = json.loads(examples)
+                    except Exception:
+                        examples = []
+                if not isinstance(examples, list):
+                    examples = []
+
+                formatted.append(
+                    {
+                        "name": c.get("name"),
+                        "keywords": keywords,
+                        "examples": examples,
+                        "regex": c.get("regex_pattern") or c.get("regex"),
+                    }
+                )
+
+            print(f"[DEBUG] Loaded {len(formatted)} categories from DB")
+            print(f"[DEBUG] Categories detail: {formatted}")
+            return formatted
 
     except Exception as e:
         print(f"[ERROR] fetch_categories: {e}")
@@ -274,6 +303,7 @@ def execute_campaign():
     account_id = payload.get('account_id')
     campaign_id = payload.get('campaign_id')
     limit = payload.get('limit')
+    target_recipients = payload.get('target_recipients')
     chat_start_time = payload.get('chat_start_time')
     chat_start_time_cmp = payload.get('chat_start_time_cmp', 'after')  # 'after' or 'before'
     newest_chat_time = payload.get('newest_chat_time')
@@ -295,6 +325,14 @@ def execute_campaign():
         except (TypeError, ValueError):
             limit = None
 
+    if target_recipients is not None:
+        try:
+            target_recipients = int(target_recipients)
+            if target_recipients <= 0:
+                target_recipients = None
+        except (TypeError, ValueError):
+            target_recipients = None
+
 
     print(f"[DEBUG] Parsed parameters:")
     print(f"  - session_str: {session_str[:50] + '...' if session_str else 'None'}")
@@ -302,6 +340,7 @@ def execute_campaign():
     print(f"  - account_id: {account_id}")
     print(f"  - campaign_id: {campaign_id}")
     print(f"  - limit: {limit}")
+    print(f"  - target_recipients: {target_recipients}")
     print(f"  - chat_start_time: {chat_start_time}")
     print(f"  - chat_start_time_cmp: {chat_start_time_cmp}")
     print(f"  - newest_chat_time: {newest_chat_time}")
@@ -353,6 +392,8 @@ def execute_campaign():
         'newest_chat_time_cmp': newest_chat_time_cmp,
         'sleep_time': sleep_time,
 
+        'target_recipients': target_recipients,
+
         'categories': categories
 
     }
@@ -360,7 +401,7 @@ def execute_campaign():
     CAMPAIGN_STATUS[campaign_id] = {
         'status': 'running',
         'started_at': datetime.now().isoformat(),
-        'total_recipients': limit if isinstance(limit, int) else 0,
+        'total_recipients': target_recipients if isinstance(target_recipients, int) else (limit if isinstance(limit, int) else 0),
         'sent_count': 0,
         'failed_count': 0,
         'current_recipient': None
@@ -461,7 +502,8 @@ def execute_campaign():
                         print(f"[ERROR] newest_chat_time filter: {e}")
 
                 total_dialogs += 1
-                CAMPAIGN_STATUS[campaign_id]['total_recipients'] = total_dialogs
+                if target_recipients is None:
+                    CAMPAIGN_STATUS[campaign_id]['total_recipients'] = total_dialogs
 
                 processed_dialogs += 1
 
@@ -812,10 +854,13 @@ def get_campaign_logs(campaign_id):
     status = CAMPAIGN_STATUS.get(campaign_id, {})
     
     # Convert logs to the format expected by the frontend
+    filtered = [
+        log for log in logs
+        if any(k in log['type'] for k in ['message_sent', 'message_failed', 'resume_message_sent', 'resume_message_failed'])
+    ]
     formatted_logs = []
-    for log in logs:
-        status_label = 'sent' if 'message_sent' in log['type'] else (
-            'failed' if 'failed' in log['type'] else log['type'])
+    for log in filtered:
+        status_label = 'sent' if 'message_sent' in log['type'] else 'failed'
         formatted_logs.append({
             'phone': log['details'].get('recipient', ''),
             'status': status_label,
@@ -964,7 +1009,7 @@ def resume_campaign(campaign_id):
         'status': 'running',
         'started_at': datetime.now().isoformat(),
         'resumed_at': datetime.now().isoformat(),
-        'total_recipients': campaign_data.get('limit', 0),
+        'total_recipients': campaign_data.get('target_recipients') or campaign_data.get('limit', 0),
         'sent_count': status.get('sent_count', 0),  # Keep existing sent count
         'failed_count': status.get('failed_count', 0),  # Keep existing failed count
         'current_recipient': None,
@@ -992,6 +1037,8 @@ def resume_campaign(campaign_id):
         },
     )
     campaign_data['categories'] = categories
+    if 'target_recipients' not in campaign_data and target_recipients is not None:
+        campaign_data['target_recipients'] = target_recipients
 
     
     # Start the campaign execution in background
@@ -1017,6 +1064,7 @@ async def _resume_send(campaign_id):
     session_str = campaign_data.get('session')
     message = campaign_data.get('message')
     limit = campaign_data.get('limit')
+    target_recipients = campaign_data.get('target_recipients')
     
     if not session_str or not message:
         log_campaign_event(campaign_id, 'resume_failed', {'error': 'Missing session or message'})
@@ -1097,7 +1145,8 @@ async def _resume_send(campaign_id):
                         print(f"[ERROR] newest_chat_time filter: {e}")
 
                 total_dialogs += 1
-                CAMPAIGN_STATUS[campaign_id]['total_recipients'] = total_dialogs
+                if target_recipients is None:
+                    CAMPAIGN_STATUS[campaign_id]['total_recipients'] = total_dialogs
 
                 CAMPAIGN_STATUS[campaign_id]['current_recipient'] = f"{user.username or user.id}"
 
