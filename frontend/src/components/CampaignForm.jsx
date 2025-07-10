@@ -24,6 +24,7 @@ export default function CampaignForm({ accountId, sessionId, onSaved, onClose })
   const [newestChatTime, setNewestChatTime] = useState('')
   const [newestChatTimeCmp, setNewestChatTimeCmp] = useState('after')
   const [sleepTime, setSleepTime] = useState('1')
+  const [limit, setLimit] = useState('')
 
   const insertPlaceholder = ph => {
     const quill = quillRef.current.getEditor()
@@ -53,6 +54,7 @@ export default function CampaignForm({ accountId, sessionId, onSaved, onClose })
           newest_chat_time: newestChatTime || undefined,
           newest_chat_time_cmp: newestChatTimeCmp,
           sleep_time: sleepTime,
+          limit: limit ? parseInt(limit) : undefined,
         }),
       })
       const data = await resp.json().catch(() => ({}))
@@ -193,9 +195,20 @@ export default function CampaignForm({ accountId, sessionId, onSaved, onClose })
           </div>
 
           <div className="space-y-1">
-            <label className="block font-semibold">Sleep Time (seconds between messages)</label>
-            <input type="number" min="0" step="0.1" value={sleepTime} onChange={e => setSleepTime(e.target.value)} className="border rounded p-2 w-full" />
-          </div>
+          <label className="block font-semibold">Sleep Time (seconds between messages)</label>
+          <input type="number" min="0" step="0.1" value={sleepTime} onChange={e => setSleepTime(e.target.value)} className="border rounded p-2 w-full" />
+        </div>
+
+        <div className="space-y-1">
+          <label className="block font-semibold">Limit Chats (optional)</label>
+          <input
+            type="number"
+            className="border rounded p-2 w-full focus:outline-none focus:ring-2 focus:ring-blue-500"
+            value={limit}
+            onChange={e => setLimit(e.target.value)}
+            placeholder="Leave empty for no limit"
+          />
+        </div>
 
           <button
             type="submit"
