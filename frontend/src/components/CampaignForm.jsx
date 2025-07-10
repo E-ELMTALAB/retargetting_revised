@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react'
+import React, { useState, useRef, useEffect } from 'react'
 import ReactQuill from 'react-quill'
 import 'react-quill/dist/quill.snow.css'
 
@@ -11,7 +11,9 @@ const placeholders = ['{{first_name}}', '{{last_order}}', '{{discount_code}}']
 export default function CampaignForm({ accountId, sessionId, onSaved, onClose }) {
   const [message, setMessage] = useState('')
   const [media, setMedia] = useState(null)
-  const [categories, setCategories] = useState([])
+  const [selectedCats, setSelectedCats] = useState([])
+  const [excludeMode, setExcludeMode] = useState(false)
+  const [availableCats, setAvailableCats] = useState([])
   const [quietStart, setQuietStart] = useState('')
   const [quietEnd, setQuietEnd] = useState('')
   const [nudge, setNudge] = useState('')
@@ -25,6 +27,19 @@ export default function CampaignForm({ accountId, sessionId, onSaved, onClose })
   const [newestChatTimeCmp, setNewestChatTimeCmp] = useState('after')
   const [sleepTime, setSleepTime] = useState('1')
   const [limit, setLimit] = useState('')
+
+  useEffect(() => {
+    const fetchCats = async () => {
+      try {
+        const resp = await fetch(`${API_BASE}/categories`)
+        const data = await resp.json()
+        setAvailableCats(data.categories || [])
+      } catch (e) {
+        console.error('fetch categories', e)
+      }
+    }
+    fetchCats()
+  }, [])
 
   const insertPlaceholder = ph => {
     const quill = quillRef.current.getEditor()
@@ -55,6 +70,11 @@ export default function CampaignForm({ accountId, sessionId, onSaved, onClose })
           newest_chat_time_cmp: newestChatTimeCmp,
           sleep_time: sleepTime,
           limit: limit ? parseInt(limit) : undefined,
+          ...(selectedCats.length
+            ? excludeMode
+              ? { exclude_categories: selectedCats }
+              : { include_categories: selectedCats }
+            : {}),
         }),
       })
       const data = await resp.json().catch(() => ({}))
@@ -114,17 +134,27 @@ export default function CampaignForm({ accountId, sessionId, onSaved, onClose })
 
           <div className="space-y-1">
             <label className="block font-semibold">Category Filters (optional)</label>
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={excludeMode}
+                onChange={e => setExcludeMode(e.target.checked)}
+              />
+              <span className="text-sm">Exclude selected categories</span>
+            </label>
             <select
               multiple
               className="border rounded p-2 w-full focus:outline-none focus:ring-2 focus:ring-blue-500"
-              value={categories}
+              value={selectedCats}
               onChange={e =>
-                setCategories(Array.from(e.target.selectedOptions, o => o.value))
+                setSelectedCats(Array.from(e.target.selectedOptions, o => o.value))
               }
             >
-              <option value="vip">VIP</option>
-              <option value="new">New</option>
-              <option value="returning">Returning</option>
+              {availableCats.map(cat => (
+                <option key={cat.name} value={cat.name}>
+                  {cat.name}
+                </option>
+              ))}
             </select>
           </div>
 
