@@ -266,6 +266,35 @@ def send_categorizations(account_id, matches, campaign_id):
         return {'error': str(e)}
 
 
+def log_sent_user(campaign_id, user_id):
+    """Notify the worker that a user was sent a campaign message."""
+    try:
+        requests.post(
+            f"{WORKER_API_URL}/campaigns/{campaign_id}/sent",
+            json={"user_id": user_id},
+            timeout=10,
+        )
+    except Exception as e:
+        print(f"[ERROR] log_sent_user: {e}")
+
+
+def fetch_sent_users(campaign_id):
+    """Retrieve already sent users for a campaign from the worker."""
+    try:
+        resp = requests.get(
+            f"{WORKER_API_URL}/campaigns/{campaign_id}/sent",
+            timeout=10,
+        )
+        data = resp.json()
+        if resp.status_code == 200:
+            users = data.get("users", [])
+            if isinstance(users, list):
+                return set(str(u) for u in users)
+    except Exception as e:
+        print(f"[ERROR] fetch_sent_users: {e}")
+    return set()
+
+
 @app.route('/health', methods=['GET'])
 def health():
     """Simple health check endpoint with API credential validation."""
@@ -532,6 +561,7 @@ def execute_campaign():
                     # Mark user as sent
                     user_id = str(user.id)
                     SENT_USERS[campaign_id].add(user_id)
+                    log_sent_user(campaign_id, user_id)
 
                     CAMPAIGN_STATUS[campaign_id]['sent_count'] += 1
                     log_campaign_event(campaign_id, 'message_sent', {
@@ -563,6 +593,7 @@ def execute_campaign():
                     try:
                         # await client.send_message(user, message)
                         CAMPAIGN_STATUS[campaign_id]['sent_count'] += 1
+                        log_sent_user(campaign_id, user_id)
                         log_campaign_event(campaign_id, 'message_sent_after_flood_wait', {
                             'recipient': f"{user.username or user.id}",
                             'success': True
@@ -1078,9 +1109,10 @@ async def _resume_send(campaign_id):
         log_campaign_event(campaign_id, 'resume_client_connecting', {})
         await client.connect()
         log_campaign_event(campaign_id, 'resume_client_connected', {})
-        
+
         # Get already sent users for this campaign
-        sent_users = SENT_USERS.get(campaign_id, set())
+        sent_users = fetch_sent_users(campaign_id)
+        SENT_USERS[campaign_id] = set(sent_users)
         print(f"[DEBUG] Campaign {campaign_id} has {len(sent_users)} already sent users")
         
         total_dialogs = 0
@@ -1165,6 +1197,7 @@ async def _resume_send(campaign_id):
                     if campaign_id not in SENT_USERS:
                         SENT_USERS[campaign_id] = set()
                     SENT_USERS[campaign_id].add(user_id)
+                    log_sent_user(campaign_id, user_id)
 
                     CAMPAIGN_STATUS[campaign_id]['sent_count'] += 1
                     log_campaign_event(campaign_id, 'resume_message_sent', {
