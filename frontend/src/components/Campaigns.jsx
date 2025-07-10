@@ -33,15 +33,9 @@ export default function Campaigns({ accountId, sessionId, onSelectCampaign }) {
 
   const startCampaign = (id) => {
     console.log("start/resume campaign", id);
-    const limitStr = prompt(
-      "How many users should this campaign message? Leave blank for all",
-    );
-    const limit = limitStr ? parseInt(limitStr, 10) : null;
     const options = {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
     };
-    if (limit) options.body = JSON.stringify({ limit });
     fetch(`${API_BASE}/campaigns/${id}/start`, options)
       .then(async (r) => {
         if (!r.ok) {
