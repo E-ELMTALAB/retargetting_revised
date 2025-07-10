@@ -11,8 +11,10 @@ const placeholders = ['{{first_name}}', '{{last_order}}', '{{discount_code}}']
 export default function CampaignForm({ accountId, sessionId, onSaved, onClose }) {
   const [message, setMessage] = useState('')
   const [media, setMedia] = useState(null)
-  const [includeCats, setIncludeCats] = useState([])
-  const [excludeCats, setExcludeCats] = useState([])
+
+  const [selectedCats, setSelectedCats] = useState([])
+  const [excludeMode, setExcludeMode] = useState(false)
+
   const [availableCats, setAvailableCats] = useState([])
   const [quietStart, setQuietStart] = useState('')
   const [quietEnd, setQuietEnd] = useState('')
@@ -70,8 +72,13 @@ export default function CampaignForm({ accountId, sessionId, onSaved, onClose })
           newest_chat_time_cmp: newestChatTimeCmp,
           sleep_time: sleepTime,
           limit: limit ? parseInt(limit) : undefined,
-          include_categories: includeCats,
-          exclude_categories: excludeCats,
+
+          ...(selectedCats.length
+            ? excludeMode
+              ? { exclude_categories: selectedCats }
+              : { include_categories: selectedCats }
+            : {}),
+
         }),
       })
       const data = await resp.json().catch(() => ({}))
@@ -131,44 +138,30 @@ export default function CampaignForm({ accountId, sessionId, onSaved, onClose })
 
           <div className="space-y-1">
             <label className="block font-semibold">Category Filters (optional)</label>
-            <div className="space-y-1">
+
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={excludeMode}
+                onChange={e => setExcludeMode(e.target.checked)}
+              />
+              <span className="text-sm">Exclude selected categories</span>
+            </label>
+            <select
+              multiple
+              className="border rounded p-2 w-full focus:outline-none focus:ring-2 focus:ring-blue-500"
+              value={selectedCats}
+              onChange={e =>
+                setSelectedCats(Array.from(e.target.selectedOptions, o => o.value))
+              }
+            >
               {availableCats.map(cat => (
-                <div key={cat.name} className="flex items-center gap-2">
-                  <label className="flex items-center gap-1">
-                    <input
-                      type="checkbox"
-                      value={cat.name}
-                      checked={includeCats.includes(cat.name)}
-                      onChange={e => {
-                        const v = e.target.value
-                        setIncludeCats(prev =>
-                          prev.includes(v)
-                            ? prev.filter(c => c !== v)
-                            : [...prev, v]
-                        )
-                      }}
-                    />
-                    <span className="text-sm">Include {cat.name}</span>
-                  </label>
-                  <label className="flex items-center gap-1">
-                    <input
-                      type="checkbox"
-                      value={cat.name}
-                      checked={excludeCats.includes(cat.name)}
-                      onChange={e => {
-                        const v = e.target.value
-                        setExcludeCats(prev =>
-                          prev.includes(v)
-                            ? prev.filter(c => c !== v)
-                            : [...prev, v]
-                        )
-                      }}
-                    />
-                    <span className="text-sm">Exclude {cat.name}</span>
-                  </label>
-                </div>
+                <option key={cat.name} value={cat.name}>
+                  {cat.name}
+                </option>
               ))}
-            </div>
+            </select>
+
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
