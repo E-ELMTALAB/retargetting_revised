@@ -12,8 +12,10 @@ const placeholders = ['{{first_name}}', '{{last_order}}', '{{discount_code}}']
 export default function CampaignForm({ accountId, sessionId, onSaved, onClose }) {
   const [message, setMessage] = useState('')
   const [media, setMedia] = useState(null)
+
   const [selectedCats, setSelectedCats] = useState([])
   const [excludeMode, setExcludeMode] = useState(false)
+
   const [availableCats, setAvailableCats] = useState([])
   const [quietStart, setQuietStart] = useState('')
   const [quietEnd, setQuietEnd] = useState('')
@@ -71,11 +73,13 @@ export default function CampaignForm({ accountId, sessionId, onSaved, onClose })
           newest_chat_time_cmp: newestChatTimeCmp,
           sleep_time: sleepTime,
           limit: limit ? parseInt(limit) : undefined,
+
           ...(selectedCats.length
             ? excludeMode
               ? { exclude_categories: selectedCats }
               : { include_categories: selectedCats }
             : {}),
+
         }),
       })
       const data = await resp.json().catch(() => ({}))
@@ -135,6 +139,7 @@ export default function CampaignForm({ accountId, sessionId, onSaved, onClose })
 
           <div className="space-y-1">
             <label className="block font-semibold">Category Filters (optional)</label>
+
             <label className="flex items-center gap-2">
               <input
                 type="checkbox"
@@ -150,6 +155,7 @@ export default function CampaignForm({ accountId, sessionId, onSaved, onClose })
               className="text-sm"
               onChange={opts => setSelectedCats(opts.map(o => o.value))}
             />
+
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
