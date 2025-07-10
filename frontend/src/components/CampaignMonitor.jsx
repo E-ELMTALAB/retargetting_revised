@@ -6,7 +6,6 @@ const API_BASE =
 
 export default function CampaignMonitor({ accountId }) {
   const [progress, setProgress] = useState(0)
-  const [errors, setErrors] = useState([])
   const [logs, setLogs] = useState([])
   const [running, setRunning] = useState([])
   const [activeId, setActiveId] = useState(null)
@@ -81,12 +80,6 @@ export default function CampaignMonitor({ accountId }) {
           setProgress(0)
         }
         
-        // Update errors from status
-        if (data.failed_count > 0) {
-          setErrors([`${data.failed_count} messages failed to send`])
-        } else {
-          setErrors([])
-        }
       } else {
         console.error('Failed to fetch campaign status:', data.error)
       }
@@ -103,11 +96,6 @@ export default function CampaignMonitor({ accountId }) {
       if (response.ok) {
         const formattedLogs = Array.isArray(data.logs) ? data.logs : []
         setLogs(formattedLogs)
-        // Remove any logic that sets progress from logs
-        // Only update errors from logs
-        const failedLogs = formattedLogs.filter(l => l.status !== 'sent')
-        const errorMessages = failedLogs.map(l => `${l.phone}: ${l.error || 'failed'}`)
-        setErrors(errorMessages)
       } else {
         console.error('Failed to fetch campaign logs:', data.error)
       }
@@ -334,18 +322,6 @@ export default function CampaignMonitor({ accountId }) {
               </div>
             </div>
 
-            <div>
-              <h3 className="font-medium mb-1">Error Notifications</h3>
-              {errors.length === 0 ? (
-                <p className="text-sm text-gray-500">No errors</p>
-              ) : (
-                <ul className="list-disc list-inside text-sm text-red-600 space-y-1">
-                  {errors.map((e, i) => (
-                    <li key={i}>{e}</li>
-                  ))}
-                </ul>
-              )}
-            </div>
 
             <div>
               <h3 className="font-medium mb-1">Live Logs</h3>

@@ -571,6 +571,7 @@ router.post("/campaigns/:id/start", async ({ params, request }, env: Env) => {
     limit = Number(filters.limit);
     if (!Number.isFinite(limit) || limit <= 0) limit = undefined;
   }
+  const targetRecipients = limit;
 
   // Log the request being sent to Python API
   const requestBody = {
@@ -579,6 +580,7 @@ router.post("/campaigns/:id/start", async ({ params, request }, env: Env) => {
     account_id: row.account_id,
     campaign_id: row.id,
     ...(limit ? { limit } : {}),
+    ...(targetRecipients ? { target_recipients: targetRecipients } : {}),
     ...filters,
   };
   console.log("Sending to Python API:", {
