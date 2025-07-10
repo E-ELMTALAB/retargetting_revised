@@ -158,6 +158,16 @@ function jsonResponse(obj: any, status = 200) {
   });
 }
 
+function safeParseJSON(str: any) {
+  if (!str) return [];
+  try {
+    const parsed = JSON.parse(str);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
 interface Chat {
   phone: string;
   messages: string[];
@@ -808,8 +818,18 @@ router.get("/categories", async (request: Request, env: Env) => {
     )
       .bind(accountId)
       .all();
-    logs.push(`categories results: ${JSON.stringify(results)}`);
-    return new Response(JSON.stringify({ categories: results, logs }), {
+    const categories = (Array.isArray(results) ? results : results.results || []).map(
+      (c: any) => ({
+        id: c.id,
+        name: c.name,
+        description: c.description,
+        regex: c.regex_pattern,
+        keywords: safeParseJSON(c.keywords_json),
+        examples: safeParseJSON(c.sample_chats_json),
+      }),
+    );
+    logs.push(`categories results: ${JSON.stringify(categories)}`);
+    return new Response(JSON.stringify({ categories, logs }), {
       headers: { "Content-Type": "application/json", ...corsHeaders },
     });
   } catch (err) {
