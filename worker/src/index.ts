@@ -188,7 +188,7 @@ async function fetchChats(env: Env, session: string): Promise<Chat[]> {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ session }),
     });
-    const data = await resp.json().catch(() => ({}));
+    const data: any = await resp.json().catch(() => ({}));
     if (resp.ok && data && Array.isArray(data.chats)) {
       console.log(`[CATEGORIZE] fetched ${data.chats.length} chats`);
       return data.chats as Chat[];
@@ -649,7 +649,7 @@ router.post("/campaigns/:id/start", async ({ params, request }, env: Env) => {
     );
   }
 
-  const data = await resp.json().catch(() => ({}));
+  const data: any = await resp.json().catch(() => ({}));
   console.log("execute_campaign response data:", data);
   if (data && data.categorization) {
     console.log("categorization summary from python", data.categorization);
@@ -778,7 +778,7 @@ router.post("/campaigns/:id/update", async ({ params, request }, env: Env) => {
       .bind(body.message || (row ? row.message_text : null), JSON.stringify(filters), id)
       .run();
     
-    const data = await resp.json();
+    const data: any = await resp.json();
     if (data && data.categorization) {
       console.log("categorization summary from python", data.categorization);
     }
@@ -814,7 +814,7 @@ router.post("/campaigns/:id/resume", async ({ params }, env: Env) => {
       method: "POST",
     });
     
-    const data = await resp.json();
+    const data: any = await resp.json();
     if (!resp.ok) {
       return jsonResponse({ error: "python error", details: data }, resp.status);
     }
@@ -852,6 +852,7 @@ router.get("/categories", async (request: Request, env: Env) => {
         examples: safeParseJSON(c.sample_chats_json),
       }),
     );
+
     categories.push({
       id: 0,
       name: "Other",
@@ -860,6 +861,7 @@ router.get("/categories", async (request: Request, env: Env) => {
       keywords: [],
       examples: [],
     });
+
     logs.push(`categories results: ${JSON.stringify(categories)}`);
     return new Response(JSON.stringify({ categories, logs }), {
       headers: { "Content-Type": "application/json", ...corsHeaders },
