@@ -73,8 +73,12 @@ export default function CampaignMonitor({ accountId }) {
       
       if (response.ok) {
         setCampaignStatus(data)
-        // Defensive: Only set progress if total_recipients > 0
-        if (typeof data.progress_percent === 'number' && data.total_recipients > 0) {
+        if (data.status === 'completed') {
+          setProgress(100)
+        } else if (
+          typeof data.progress_percent === 'number' &&
+          data.total_recipients > 0
+        ) {
           setProgress(data.progress_percent)
         } else {
           setProgress(0)
@@ -249,7 +253,7 @@ export default function CampaignMonitor({ accountId }) {
                     >
                       Edit
                     </button>
-                    {c.status === 'stopped' || c.status === 'completed' ? (
+                    {c.status === 'stopped' ? (
                       <button
                         onClick={(e) => {
                           e.stopPropagation()
@@ -264,6 +268,8 @@ export default function CampaignMonitor({ accountId }) {
                           ? 'Retry'
                           : 'Resume'}
                       </button>
+                    ) : c.status === 'completed' ? (
+                      <span className="px-2 py-1 text-xs bg-gray-300 text-gray-700 rounded">Completed</span>
                     ) : (
                       <button
                         onClick={(e) => {
@@ -303,6 +309,11 @@ export default function CampaignMonitor({ accountId }) {
               {campaignStatus.status === 'completed' && (
                 <p className="text-green-600 text-sm font-semibold">Campaign finished</p>
               )}
+
+              {campaignStatus.status === 'running' && campaignStatus.neglected_count > 0 && (
+                <p className="text-orange-600 text-xs">Neglecting {campaignStatus.neglected_count} chats</p>
+              )}
+
 
               <div className="flex items-center justify-between mt-1">
                 <div className="text-xs text-gray-500">
