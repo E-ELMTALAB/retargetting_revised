@@ -133,7 +133,11 @@ export default function Campaigns({ accountId, sessionId, onSelectCampaign }) {
                   className="px-2 py-1 text-sm bg-green-600 text-white rounded"
                   onClick={() => startCampaign(c.id)}
                 >
-                  {c.status === "stopped" ? "Resume" : "Run"}
+                  {c.status === "stopped"
+                    ? "Resume"
+                    : c.status === "completed"
+                    ? "Retry"
+                    : "Run"}
                 </button>
               )}
             </div>
