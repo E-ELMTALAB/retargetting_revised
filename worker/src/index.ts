@@ -1176,6 +1176,16 @@ const campaignStatusHandler = async ({ params }: { params: any }, env: Env) => {
   logs.push(`[STATUS] Success for campaign ${id}`);
   const safeData =
     data && typeof data === "object" && !Array.isArray(data) ? data : { data };
+  if (safeData.status && safeData.status !== "running") {
+    try {
+      await env.DB.prepare("UPDATE campaigns SET status=?1 WHERE id=?2")
+        .bind(safeData.status, id)
+        .run();
+      logs.push(`[STATUS] Updated campaign ${id} status to ${safeData.status}`);
+    } catch (e) {
+      logs.push(`[STATUS] DB update error: ${e}`);
+    }
+  }
   return jsonResponse({ ...safeData, logs });
 };
 router.get("/campaigns/:id/status", campaignStatusHandler);
