@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 """
-Test campaign editing and resuming functionality
+Test campaign resuming functionality
 """
 
 import requests
 import json
-import time
 
 # Configuration
 PYTHON_API_URL = "http://localhost:5000"
@@ -13,7 +12,7 @@ PYTHON_API_URL = "http://localhost:5000"
 def test_campaign_editing_and_resuming():
     """Test the complete flow of campaign editing and resuming."""
     
-    print("Testing campaign editing and resuming functionality...")
+    print("Testing campaign resuming functionality without edit route...")
     
     # Test data
     test_campaign_data = {
@@ -38,39 +37,18 @@ def test_campaign_editing_and_resuming():
         
         campaign_id = test_campaign_data["campaign_id"]
         
-        # 2. Get campaign data
-        print("\n2. Getting campaign data...")
-        response = requests.get(f"{PYTHON_API_URL}/campaign_data/{campaign_id}")
-        
-        if response.status_code == 200:
-            data = response.json()
-            print("✓ Campaign data retrieved successfully")
-            print(f"  - Status: {data.get('status')}")
-            print(f"  - Sent count: {data.get('sent_count')}")
+        # 2. Ensure edit endpoints are not available
+        print("\n2. Checking removed edit endpoints...")
+        r1 = requests.get(f"{PYTHON_API_URL}/campaign_data/{campaign_id}")
+        r2 = requests.post(f"{PYTHON_API_URL}/update_campaign/{campaign_id}")
+        if r1.status_code == 404 and r2.status_code == 404:
+            print("✓ Edit routes return 404 as expected")
         else:
-            print(f"✗ Failed to get campaign data: {response.text}")
+            print("✗ Edit routes still exist")
             return False
         
-        # 3. Update campaign data
-        print("\n3. Updating campaign data...")
-        updated_data = {
-            "message": "Updated test message for campaign editing",
-            "limit": 10,
-            "account_id": 1,
-            "session": "test_session_string"
-        }
-        
-        response = requests.post(f"{PYTHON_API_URL}/update_campaign/{campaign_id}", 
-                               json=updated_data)
-        
-        if response.status_code == 200:
-            print("✓ Campaign updated successfully")
-        else:
-            print(f"✗ Failed to update campaign: {response.text}")
-            return False
-        
-        # 4. Stop the campaign
-        print("\n4. Stopping campaign...")
+        # 3. Stop the campaign
+        print("\n3. Stopping campaign...")
         response = requests.post(f"{PYTHON_API_URL}/stop_campaign/{campaign_id}")
         
         if response.status_code == 200:
@@ -79,8 +57,8 @@ def test_campaign_editing_and_resuming():
             print(f"✗ Failed to stop campaign: {response.text}")
             return False
         
-        # 5. Resume the campaign
-        print("\n5. Resuming campaign...")
+        # 4. Resume the campaign
+        print("\n4. Resuming campaign...")
         response = requests.post(f"{PYTHON_API_URL}/resume_campaign/{campaign_id}")
         
         if response.status_code == 200:
@@ -89,8 +67,8 @@ def test_campaign_editing_and_resuming():
             print(f"✗ Failed to resume campaign: {response.text}")
             return False
         
-        # 6. Check final status
-        print("\n6. Checking final campaign status...")
+        # 5. Check final status
+        print("\n5. Checking final campaign status...")
         response = requests.get(f"{PYTHON_API_URL}/campaign_status/{campaign_id}")
         
         if response.status_code == 200:

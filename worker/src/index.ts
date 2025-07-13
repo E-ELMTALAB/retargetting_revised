@@ -721,77 +721,6 @@ router.post("/campaigns/:id/stop/", stopCampaignHandler);
 router.get("/campaigns/:id/stop", stopCampaignHandler);
 router.get("/campaigns/:id/stop/", stopCampaignHandler);
 
-// Get campaign data for editing
-router.get("/campaigns/:id/data", async ({ params }, env: Env) => {
-  const id = Number(params?.id || 0);
-  if (!id) return jsonResponse({ error: "invalid id" }, 400);
-
-  try {
-    const resp = await fetch(`${env.PYTHON_API_URL}/campaign_data/${id}`);
-    const data = await resp.json();
-    
-    if (!resp.ok) {
-      return jsonResponse({ error: "python error", details: data }, resp.status);
-    }
-    
-    return jsonResponse(data);
-  } catch (err) {
-    console.error("get campaign data error", err);
-    return jsonResponse({ error: "api request failed" }, 500);
-  }
-});
-
-// Update campaign data
-router.post("/campaigns/:id/update", async ({ params, request }, env: Env) => {
-  const id = Number(params?.id || 0);
-  if (!id) return jsonResponse({ error: "invalid id" }, 400);
-
-  try {
-    const body = await request.json();
-    const resp = await fetch(`${env.PYTHON_API_URL}/update_campaign/${id}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-
-    // persist limit in DB
-    let row: any;
-    try {
-      row = await env.DB.prepare(
-        "SELECT filters_json, message_text FROM campaigns WHERE id=?1",
-      )
-        .bind(id)
-        .first();
-    } catch {}
-    let filters: any = {};
-    try { filters = row && row.filters_json ? JSON.parse(row.filters_json) : {}; } catch {}
-    if ("limit" in body) {
-      if (body.limit === undefined || body.limit === null || Number(body.limit) <= 0) {
-        delete filters.limit;
-      } else {
-        filters.limit = Number(body.limit);
-      }
-    }
-    await env.DB.prepare(
-      "UPDATE campaigns SET message_text=?1, filters_json=?2 WHERE id=?3",
-    )
-      .bind(body.message || (row ? row.message_text : null), JSON.stringify(filters), id)
-      .run();
-    
-    const data: any = await resp.json();
-    if (data && data.categorization) {
-      console.log("categorization summary from python", data.categorization);
-    }
-    if (!resp.ok) {
-      return jsonResponse({ error: "python error", details: data }, resp.status);
-    }
-    
-    return jsonResponse(data);
-  } catch (err) {
-    console.error("update campaign error", err);
-    return jsonResponse({ error: "api request failed" }, 500);
-  }
-});
 
 // Resume campaign
 router.post("/campaigns/:id/resume", async ({ params }, env: Env) => {
@@ -1176,6 +1105,16 @@ const campaignStatusHandler = async ({ params }: { params: any }, env: Env) => {
   logs.push(`[STATUS] Success for campaign ${id}`);
   const safeData =
     data && typeof data === "object" && !Array.isArray(data) ? data : { data };
+  if (safeData.status && safeData.status !== "running") {
+    try {
+      await env.DB.prepare("UPDATE campaigns SET status=?1 WHERE id=?2")
+        .bind(safeData.status, id)
+        .run();
+      logs.push(`[STATUS] Updated campaign ${id} status to ${safeData.status}`);
+    } catch (e) {
+      logs.push(`[STATUS] DB update error: ${e}`);
+    }
+  }
   return jsonResponse({ ...safeData, logs });
 };
 router.get("/campaigns/:id/status", campaignStatusHandler);
