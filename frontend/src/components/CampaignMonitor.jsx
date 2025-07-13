@@ -258,7 +258,11 @@ export default function CampaignMonitor({ accountId }) {
                         disabled={loading}
                         className="px-2 py-1 text-xs bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50"
                       >
-                        {loading ? 'Resuming...' : 'Resume'}
+                        {loading
+                          ? 'Resuming...'
+                          : c.status === 'completed'
+                          ? 'Retry'
+                          : 'Resume'}
                       </button>
                     ) : (
                       <button
@@ -295,6 +299,10 @@ export default function CampaignMonitor({ accountId }) {
               <p className="text-xs text-gray-500 mb-2">
                 {progress > 0 ? `${progress}% complete` : 'Not started'}
               </p>
+
+              {campaignStatus.status === 'completed' && (
+                <p className="text-green-600 text-sm font-semibold">Campaign finished</p>
+              )}
 
               <div className="flex items-center justify-between mt-1">
                 <div className="text-xs text-gray-500">

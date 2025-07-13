@@ -742,7 +742,8 @@ def execute_campaign():
         # Update final status
         CAMPAIGN_STATUS[campaign_id]['current_recipient'] = None
         CAMPAIGN_STATUS[campaign_id]['completed_at'] = datetime.now().isoformat()
-
+        if processed_dialogs < CAMPAIGN_STATUS[campaign_id].get('total_recipients', processed_dialogs):
+            CAMPAIGN_STATUS[campaign_id]['total_recipients'] = processed_dialogs
         if stopped or CAMPAIGN_STATUS[campaign_id].get('status') == 'stopped':
             CAMPAIGN_STATUS[campaign_id]['status'] = 'stopped'
             log_campaign_event(campaign_id, 'campaign_stopped', {
@@ -1344,6 +1345,8 @@ async def _resume_send(campaign_id):
         # Update final status
         CAMPAIGN_STATUS[campaign_id]['current_recipient'] = None
         CAMPAIGN_STATUS[campaign_id]['completed_at'] = datetime.now().isoformat()
+        if processed_dialogs < CAMPAIGN_STATUS[campaign_id].get('total_recipients', processed_dialogs):
+            CAMPAIGN_STATUS[campaign_id]['total_recipients'] = processed_dialogs
 
         if STOP_FLAGS.get(campaign_id):
             CAMPAIGN_STATUS[campaign_id]['status'] = 'stopped'
