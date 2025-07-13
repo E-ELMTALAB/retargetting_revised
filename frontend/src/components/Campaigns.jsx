@@ -128,19 +128,15 @@ export default function Campaigns({ accountId, sessionId, onSelectCampaign }) {
                     Stop
                   </button>
                 </>
+              ) : c.status === "completed" ? (
+                <span className="px-2 py-1 text-sm bg-gray-300 text-gray-700 rounded">Completed</span>
               ) : (
-
-                {c.status === "completed" ? (
-                  <span className="px-2 py-1 text-sm bg-gray-300 text-gray-700 rounded">Completed</span>
-                ) : (
-                  <button
-                    className="px-2 py-1 text-sm bg-green-600 text-white rounded"
-                    onClick={() => startCampaign(c.id)}
-                  >
-                    {c.status === "stopped" ? "Resume" : "Run"}
-                  </button>
-                )}
-
+                <button
+                  className="px-2 py-1 text-sm bg-green-600 text-white rounded"
+                  onClick={() => startCampaign(c.id)}
+                >
+                  {c.status === "stopped" ? "Resume" : "Run"}
+                </button>
               )}
             </div>
           </li>
