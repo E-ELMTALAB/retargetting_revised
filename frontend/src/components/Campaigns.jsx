@@ -129,6 +129,7 @@ export default function Campaigns({ accountId, sessionId, onSelectCampaign }) {
                   </button>
                 </>
               ) : (
+
                 {c.status === "completed" ? (
                   <span className="px-2 py-1 text-sm bg-gray-300 text-gray-700 rounded">Completed</span>
                 ) : (
@@ -139,6 +140,7 @@ export default function Campaigns({ accountId, sessionId, onSelectCampaign }) {
                     {c.status === "stopped" ? "Resume" : "Run"}
                   </button>
                 )}
+
               )}
             </div>
           </li>
