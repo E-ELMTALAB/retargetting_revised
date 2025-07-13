@@ -12,8 +12,6 @@ export default function CampaignMonitor({ accountId }) {
   const [campaignStatus, setCampaignStatus] = useState({})
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
-  const [showEditModal, setShowEditModal] = useState(false)
-  const [editingCampaign, setEditingCampaign] = useState(null)
   const initialMount = React.useRef(true)
 
   const stopCampaign = async (id) => {
@@ -166,46 +164,6 @@ export default function CampaignMonitor({ accountId }) {
     }
   }
 
-  const editCampaign = async (id) => {
-    try {
-      const response = await fetch(`${API_BASE}/campaigns/${id}/data`)
-      const data = await response.json()
-      if (response.ok) {
-        setEditingCampaign(data)
-        setShowEditModal(true)
-      } else {
-        setError(`Failed to get campaign data: ${data.error || 'Unknown error'}`)
-      }
-    } catch (e) {
-      console.error('get campaign data error:', e)
-      setError(`Failed to get campaign data: ${e.message}`)
-    }
-  }
-
-  const updateCampaign = async (campaignId, updatedData) => {
-    setLoading(true)
-    try {
-      const response = await fetch(`${API_BASE}/campaigns/${campaignId}/update`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updatedData)
-      })
-      const data = await response.json()
-      if (response.ok) {
-        setShowEditModal(false)
-        setEditingCampaign(null)
-        // Refresh campaign status
-        fetchCampaignStatus(campaignId)
-      } else {
-        setError(`Failed to update campaign: ${data.error || 'Unknown error'}`)
-      }
-    } catch (e) {
-      console.error('update campaign error:', e)
-      setError(`Failed to update campaign: ${e.message}`)
-    } finally {
-      setLoading(false)
-    }
-  }
 
   return (
     <div className="p-4 space-y-4">
@@ -244,15 +202,7 @@ export default function CampaignMonitor({ accountId }) {
                     <p className="text-xs text-gray-500">Status: {c.status}</p>
                   </div>
                   <div className="flex gap-1 ml-2">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        editCampaign(c.id)
-                      }}
-                      className="px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700"
-                    >
-                      Edit
-                    </button>
+
                     {c.status === 'stopped' ? (
                       <button
                         onClick={(e) => {
@@ -360,70 +310,6 @@ export default function CampaignMonitor({ accountId }) {
                   </ul>
                 </div>
               )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Edit Campaign Modal */}
-      {showEditModal && editingCampaign && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white p-6 rounded-lg max-w-md w-full mx-4">
-            <h3 className="text-lg font-semibold mb-4">Edit Campaign #{editingCampaign.campaign_id}</h3>
-            
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium mb-1">Message</label>
-                <textarea
-                  value={editingCampaign.data?.message || ''}
-                  onChange={(e) => setEditingCampaign({
-                    ...editingCampaign,
-                    data: { ...editingCampaign.data, message: e.target.value }
-                  })}
-                  className="w-full p-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  rows={4}
-                />
-              </div>
-              
-              <div>
-                <label className="block text-sm font-medium mb-1">Limit (optional)</label>
-                <input
-                  type="number"
-                  value={editingCampaign.data?.limit || ''}
-                  onChange={(e) => setEditingCampaign({
-                    ...editingCampaign,
-                    data: { ...editingCampaign.data, limit: e.target.value ? parseInt(e.target.value) : null }
-                  })}
-                  className="w-full p-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="Leave empty for no limit"
-                />
-              </div>
-              
-              <div className="text-sm text-gray-600">
-                <p><strong>Current Status:</strong> {editingCampaign.status}</p>
-                <p><strong>Sent:</strong> {editingCampaign.sent_count}</p>
-                <p><strong>Failed:</strong> {editingCampaign.failed_count}</p>
-                <p><strong>Total Recipients:</strong> {editingCampaign.total_recipients}</p>
-              </div>
-            </div>
-            
-            <div className="flex gap-2 mt-6">
-              <button
-                onClick={() => {
-                  setShowEditModal(false)
-                  setEditingCampaign(null)
-                }}
-                className="flex-1 px-4 py-2 border border-gray-300 rounded hover:bg-gray-50"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => updateCampaign(editingCampaign.campaign_id, editingCampaign.data)}
-                disabled={loading}
-                className="flex-1 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
-              >
-                {loading ? 'Updating...' : 'Update Campaign'}
-              </button>
             </div>
           </div>
         </div>

@@ -14,6 +14,23 @@ function stripPTags(html) {
   return html.replace(/^<p>(.*?)<\/p>$/is, '$1');
 }
 
+function summarizeFilters(json) {
+  try {
+    const f = JSON.parse(json);
+    const parts = [];
+    if (f.limit) parts.push(`limit ${f.limit}`);
+    if (f.include_categories && f.include_categories.length) {
+      parts.push(`include ${f.include_categories.join(',')}`);
+    }
+    if (f.exclude_categories && f.exclude_categories.length) {
+      parts.push(`exclude ${f.exclude_categories.join(',')}`);
+    }
+    return parts.join('; ');
+  } catch {
+    return '';
+  }
+}
+
 export default function Campaigns({ accountId, sessionId, onSelectCampaign }) {
   const [campaigns, setCampaigns] = useState([]);
   const [showForm, setShowForm] = useState(false);
@@ -104,7 +121,7 @@ export default function Campaigns({ accountId, sessionId, onSelectCampaign }) {
               </p>
               <div className="text-sm text-gray-600" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(stripPTags(c.message_text)).slice(0, 120) + (c.message_text.length > 120 ? '...' : '') }} />
               {c.filters_json && (
-                <pre className="text-xs text-gray-400 mt-1">{c.filters_json}</pre>
+                <p className="text-xs text-gray-400 mt-1 break-words">{summarizeFilters(c.filters_json)}</p>
               )}
             </div>
             <div className="flex items-center gap-4">
@@ -131,12 +148,16 @@ export default function Campaigns({ accountId, sessionId, onSelectCampaign }) {
               ) : c.status === "completed" ? (
                 <span className="px-2 py-1 text-sm bg-gray-300 text-gray-700 rounded">Completed</span>
               ) : (
-                <button
-                  className="px-2 py-1 text-sm bg-green-600 text-white rounded"
-                  onClick={() => startCampaign(c.id)}
-                >
-                  {c.status === "stopped" ? "Resume" : "Run"}
-                </button>
+                {c.status === "completed" ? (
+                  <span className="px-2 py-1 text-sm bg-gray-300 text-gray-700 rounded">Completed</span>
+                ) : (
+                  <button
+                    className="px-2 py-1 text-sm bg-green-600 text-white rounded"
+                    onClick={() => startCampaign(c.id)}
+                  >
+                    {c.status === "stopped" ? "Resume" : "Run"}
+                  </button>
+                )}
               )}
             </div>
           </li>

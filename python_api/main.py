@@ -1033,57 +1033,6 @@ def stop_campaign(campaign_id):
     
     return jsonify({"status": "stopped", "campaign_id": campaign_id})
 
-@app.route('/campaign_data/<int:campaign_id>', methods=['GET'])
-def get_campaign_data(campaign_id):
-    """Get campaign configuration data for editing."""
-    campaign_data = CAMPAIGN_DATA.get(campaign_id, {})
-    status = CAMPAIGN_STATUS.get(campaign_id, {})
-    
-    return jsonify({
-        'campaign_id': campaign_id,
-        'data': campaign_data,
-        'status': status.get('status', 'unknown'),
-        'sent_count': status.get('sent_count', 0),
-        'failed_count': status.get('failed_count', 0),
-        'total_recipients': status.get('total_recipients', 0)
-    })
-
-@app.route('/update_campaign/<int:campaign_id>', methods=['POST'])
-def update_campaign(campaign_id):
-    """Update campaign configuration data."""
-    try:
-        payload = request.get_json(force=True)
-        print(f"[DEBUG] Updating campaign {campaign_id} with data: {payload}")
-        
-        # Update existing campaign data instead of replacing it entirely
-        if campaign_id not in CAMPAIGN_DATA:
-            CAMPAIGN_DATA[campaign_id] = {}
-        data = CAMPAIGN_DATA[campaign_id]
-        if 'message' in payload and payload.get('message') is not None:
-            data['message'] = payload.get('message')
-        if 'limit' in payload:
-            data['limit'] = payload.get('limit')
-        if 'account_id' in payload and payload.get('account_id') is not None:
-            data['account_id'] = payload.get('account_id')
-        if 'session' in payload and payload.get('session') is not None:
-            data['session'] = payload.get('session')
-        data['updated_at'] = datetime.now().isoformat()
-        
-        # Update campaign status to indicate it's been modified
-        if campaign_id in CAMPAIGN_STATUS:
-            CAMPAIGN_STATUS[campaign_id]['modified'] = True
-            CAMPAIGN_STATUS[campaign_id]['modified_at'] = datetime.now().isoformat()
-        
-        log_campaign_event(campaign_id, 'campaign_updated', {
-            'message_preview': payload.get('message', '')[:100] + '...' if payload.get('message') else '',
-            'limit': payload.get('limit')
-        })
-        
-        return jsonify({'status': 'updated', 'campaign_id': campaign_id})
-        
-    except Exception as e:
-        print(f"[ERROR] Failed to update campaign {campaign_id}: {e}")
-        return jsonify({'error': str(e)}), 500
 
 @app.route('/resume_campaign/<int:campaign_id>', methods=['POST'])
 def resume_campaign(campaign_id):
