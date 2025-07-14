@@ -1192,6 +1192,7 @@ const campaignStatusHandler = async ({ params }: { params: any }, env: Env) => {
         .run();
       logs.push(`[STATUS] Updated campaign ${id} status to ${safeData.status}`);
 
+
       if (safeData.status === "completed") {
         const campRow: any = await env.DB.prepare(
           "SELECT account_id, filters_json FROM campaigns WHERE id=?1",
@@ -1205,6 +1206,7 @@ const campaignStatusHandler = async ({ params }: { params: any }, env: Env) => {
           logs.push(`[STATUS] Recorded user count for account ${campRow.account_id}`);
         }
       }
+
     } catch (e) {
       logs.push(`[STATUS] DB update error: ${e}`);
     }
