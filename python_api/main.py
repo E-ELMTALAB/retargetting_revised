@@ -449,7 +449,8 @@ def execute_campaign():
         'total_recipients': target_recipients if isinstance(target_recipients, int) else (limit if isinstance(limit, int) else 0),
         'sent_count': 0,
         'failed_count': 0,
-        'current_recipient': None
+        'current_recipient': None,
+        'neglected_count': 0
     }
     STOP_FLAGS[campaign_id] = False
 
@@ -504,10 +505,12 @@ def execute_campaign():
                 break
             try:
                 if not dialog.is_user:
+                    CAMPAIGN_STATUS[campaign_id]['neglected_count'] += 1
                     continue
 
                 user = dialog.entity
                 if user.bot:
+                    CAMPAIGN_STATUS[campaign_id]['neglected_count'] += 1
                     continue
 
                 # Get chat start and newest message times
@@ -526,8 +529,10 @@ def execute_campaign():
                             if filter_dt.tzinfo:
                                 filter_dt = filter_dt.replace(tzinfo=None)
                             if chat_start_time_cmp == 'after' and chat_start_dt < filter_dt:
+                                CAMPAIGN_STATUS[campaign_id]['neglected_count'] += 1
                                 continue
                             if chat_start_time_cmp == 'before' and chat_start_dt > filter_dt:
+                                CAMPAIGN_STATUS[campaign_id]['neglected_count'] += 1
                                 continue
                     except Exception as e:
                         print(f"[ERROR] chat_start_time filter: {e}")
@@ -543,8 +548,10 @@ def execute_campaign():
                             if filter_dt.tzinfo:
                                 filter_dt = filter_dt.replace(tzinfo=None)
                             if newest_chat_time_cmp == 'after' and newest_dt < filter_dt:
+                                CAMPAIGN_STATUS[campaign_id]['neglected_count'] += 1
                                 continue
                             if newest_chat_time_cmp == 'before' and newest_dt > filter_dt:
+                                CAMPAIGN_STATUS[campaign_id]['neglected_count'] += 1
                                 continue
                     except Exception as e:
                         print(f"[ERROR] newest_chat_time filter: {e}")
@@ -584,12 +591,14 @@ def execute_campaign():
                                 'recipient': f"{user.username or user.id}",
                                 'matches': []
                             })
+                            CAMPAIGN_STATUS[campaign_id]['neglected_count'] += 1
                             continue
                     elif not match_set.intersection(include_categories):
                         log_campaign_event(campaign_id, 'category_filtered', {
                             'recipient': f"{user.username or user.id}",
                             'matches': list(match_set)
                         })
+                        CAMPAIGN_STATUS[campaign_id]['neglected_count'] += 1
                         continue
 
                 if exclude_categories:
@@ -598,12 +607,14 @@ def execute_campaign():
                             'recipient': f"{user.username or user.id}",
                             'matches': []
                         })
+                        CAMPAIGN_STATUS[campaign_id]['neglected_count'] += 1
                         continue
                     if match_set.intersection(exclude_categories):
                         log_campaign_event(campaign_id, 'category_filtered', {
                             'recipient': f"{user.username or user.id}",
                             'matches': list(match_set)
                         })
+                        CAMPAIGN_STATUS[campaign_id]['neglected_count'] += 1
                         continue
 
                 try:
@@ -742,7 +753,8 @@ def execute_campaign():
         # Update final status
         CAMPAIGN_STATUS[campaign_id]['current_recipient'] = None
         CAMPAIGN_STATUS[campaign_id]['completed_at'] = datetime.now().isoformat()
-
+        if processed_dialogs < CAMPAIGN_STATUS[campaign_id].get('total_recipients', processed_dialogs):
+            CAMPAIGN_STATUS[campaign_id]['total_recipients'] = processed_dialogs
         if stopped or CAMPAIGN_STATUS[campaign_id].get('status') == 'stopped':
             CAMPAIGN_STATUS[campaign_id]['status'] = 'stopped'
             log_campaign_event(campaign_id, 'campaign_stopped', {
@@ -975,6 +987,9 @@ def get_campaign_status(campaign_id):
     else:
         progress_percent = 0
 
+    if status.get('status') == 'completed':
+        progress_percent = 100
+
 
     if processed > 0:
         success_rate = (sent_count / processed) * 100
@@ -992,6 +1007,7 @@ def get_campaign_status(campaign_id):
         'total_recipients': total_recipients,
         'sent_count': sent_count,
         'failed_count': failed_count,
+        'neglected_count': status.get('neglected_count', 0),
         'success_rate': f"{success_rate:.1f}%",
         'current_recipient': status.get('current_recipient'),
         'started_at': status.get('started_at'),
@@ -1017,57 +1033,6 @@ def stop_campaign(campaign_id):
     
     return jsonify({"status": "stopped", "campaign_id": campaign_id})
 
-@app.route('/campaign_data/<int:campaign_id>', methods=['GET'])
-def get_campaign_data(campaign_id):
-    """Get campaign configuration data for editing."""
-    campaign_data = CAMPAIGN_DATA.get(campaign_id, {})
-    status = CAMPAIGN_STATUS.get(campaign_id, {})
-    
-    return jsonify({
-        'campaign_id': campaign_id,
-        'data': campaign_data,
-        'status': status.get('status', 'unknown'),
-        'sent_count': status.get('sent_count', 0),
-        'failed_count': status.get('failed_count', 0),
-        'total_recipients': status.get('total_recipients', 0)
-    })
-
-@app.route('/update_campaign/<int:campaign_id>', methods=['POST'])
-def update_campaign(campaign_id):
-    """Update campaign configuration data."""
-    try:
-        payload = request.get_json(force=True)
-        print(f"[DEBUG] Updating campaign {campaign_id} with data: {payload}")
-        
-        # Update existing campaign data instead of replacing it entirely
-        if campaign_id not in CAMPAIGN_DATA:
-            CAMPAIGN_DATA[campaign_id] = {}
-        data = CAMPAIGN_DATA[campaign_id]
-        if 'message' in payload and payload.get('message') is not None:
-            data['message'] = payload.get('message')
-        if 'limit' in payload:
-            data['limit'] = payload.get('limit')
-        if 'account_id' in payload and payload.get('account_id') is not None:
-            data['account_id'] = payload.get('account_id')
-        if 'session' in payload and payload.get('session') is not None:
-            data['session'] = payload.get('session')
-        data['updated_at'] = datetime.now().isoformat()
-        
-        # Update campaign status to indicate it's been modified
-        if campaign_id in CAMPAIGN_STATUS:
-            CAMPAIGN_STATUS[campaign_id]['modified'] = True
-            CAMPAIGN_STATUS[campaign_id]['modified_at'] = datetime.now().isoformat()
-        
-        log_campaign_event(campaign_id, 'campaign_updated', {
-            'message_preview': payload.get('message', '')[:100] + '...' if payload.get('message') else '',
-            'limit': payload.get('limit')
-        })
-        
-        return jsonify({'status': 'updated', 'campaign_id': campaign_id})
-        
-    except Exception as e:
-        print(f"[ERROR] Failed to update campaign {campaign_id}: {e}")
-        return jsonify({'error': str(e)}), 500
 
 @app.route('/resume_campaign/<int:campaign_id>', methods=['POST'])
 def resume_campaign(campaign_id):
@@ -1120,7 +1085,8 @@ def resume_campaign(campaign_id):
         'sent_count': status.get('sent_count', 0),  # Keep existing sent count
         'failed_count': status.get('failed_count', 0),  # Keep existing failed count
         'current_recipient': None,
-        'is_resumed': True
+        'is_resumed': True,
+        'neglected_count': status.get('neglected_count', 0)
     }
     
     log_campaign_event(campaign_id, 'campaign_resumed', {
@@ -1207,16 +1173,19 @@ async def _resume_send(campaign_id):
                 
             try:
                 if not dialog.is_user:
+                    CAMPAIGN_STATUS[campaign_id]['neglected_count'] += 1
                     continue
 
                 user = dialog.entity
                 if user.bot:
+                    CAMPAIGN_STATUS[campaign_id]['neglected_count'] += 1
                     continue
 
                 # Skip users that have already been sent messages
                 user_id = str(user.id)
                 if user_id in sent_users:
                     print(f"[DEBUG] Skipping already sent user: {user.username or user.id}")
+                    CAMPAIGN_STATUS[campaign_id]['neglected_count'] += 1
                     continue
 
                 # Get chat start and newest message times
@@ -1235,8 +1204,10 @@ async def _resume_send(campaign_id):
                             if filter_dt.tzinfo:
                                 filter_dt = filter_dt.replace(tzinfo=None)
                             if campaign_data['chat_start_time_cmp'] == 'after' and chat_start_dt < filter_dt:
+                                CAMPAIGN_STATUS[campaign_id]['neglected_count'] += 1
                                 continue
                             if campaign_data['chat_start_time_cmp'] == 'before' and chat_start_dt > filter_dt:
+                                CAMPAIGN_STATUS[campaign_id]['neglected_count'] += 1
                                 continue
                     except Exception as e:
                         print(f"[ERROR] chat_start_time filter: {e}")
@@ -1252,8 +1223,10 @@ async def _resume_send(campaign_id):
                             if filter_dt.tzinfo:
                                 filter_dt = filter_dt.replace(tzinfo=None)
                             if campaign_data['newest_chat_time_cmp'] == 'after' and newest_dt < filter_dt:
+                                CAMPAIGN_STATUS[campaign_id]['neglected_count'] += 1
                                 continue
                             if campaign_data['newest_chat_time_cmp'] == 'before' and newest_dt > filter_dt:
+                                CAMPAIGN_STATUS[campaign_id]['neglected_count'] += 1
                                 continue
                     except Exception as e:
                         print(f"[ERROR] newest_chat_time filter: {e}")
@@ -1281,12 +1254,14 @@ async def _resume_send(campaign_id):
                                 'recipient': f"{user.username or user.id}",
                                 'matches': []
                             })
+                            CAMPAIGN_STATUS[campaign_id]['neglected_count'] += 1
                             continue
                     elif not match_set.intersection(include_categories):
                         log_campaign_event(campaign_id, 'category_filtered', {
                             'recipient': f"{user.username or user.id}",
                             'matches': list(match_set)
                         })
+                        CAMPAIGN_STATUS[campaign_id]['neglected_count'] += 1
                         continue
 
                 if exclude_categories:
@@ -1295,12 +1270,14 @@ async def _resume_send(campaign_id):
                             'recipient': f"{user.username or user.id}",
                             'matches': []
                         })
+                        CAMPAIGN_STATUS[campaign_id]['neglected_count'] += 1
                         continue
                     if match_set.intersection(exclude_categories):
                         log_campaign_event(campaign_id, 'category_filtered', {
                             'recipient': f"{user.username or user.id}",
                             'matches': list(match_set)
                         })
+                        CAMPAIGN_STATUS[campaign_id]['neglected_count'] += 1
                         continue
 
                 try:
@@ -1344,6 +1321,8 @@ async def _resume_send(campaign_id):
         # Update final status
         CAMPAIGN_STATUS[campaign_id]['current_recipient'] = None
         CAMPAIGN_STATUS[campaign_id]['completed_at'] = datetime.now().isoformat()
+        if processed_dialogs < CAMPAIGN_STATUS[campaign_id].get('total_recipients', processed_dialogs):
+            CAMPAIGN_STATUS[campaign_id]['total_recipients'] = processed_dialogs
 
         if STOP_FLAGS.get(campaign_id):
             CAMPAIGN_STATUS[campaign_id]['status'] = 'stopped'

@@ -106,6 +106,13 @@ CREATE TABLE IF NOT EXISTS campaign_sent (
     PRIMARY KEY (campaign_id, user_id),
     FOREIGN KEY (campaign_id) REFERENCES campaigns(id)
 );
+CREATE TABLE IF NOT EXISTS chat_overview_stats (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    account_id INTEGER NOT NULL,
+    total_users INTEGER,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (account_id) REFERENCES accounts(id)
+);
 `;
 
 async function ensureSchema(db: D1Database) {
@@ -251,6 +258,20 @@ async function categorizeChats(
       }
     }
   }
+}
+
+async function recordUserCount(env: Env, accountId: number): Promise<void> {
+  const row: any = await env.DB.prepare(
+    "SELECT COUNT(DISTINCT user_phone) as cnt FROM customer_categories WHERE account_id=?1",
+  )
+    .bind(accountId)
+    .first();
+  const count = row?.cnt || 0;
+  await env.DB.prepare(
+    "INSERT INTO chat_overview_stats (account_id, total_users) VALUES (?1, ?2)",
+  )
+    .bind(accountId, count)
+    .run();
 }
 
 // Sign up new account
@@ -721,77 +742,6 @@ router.post("/campaigns/:id/stop/", stopCampaignHandler);
 router.get("/campaigns/:id/stop", stopCampaignHandler);
 router.get("/campaigns/:id/stop/", stopCampaignHandler);
 
-// Get campaign data for editing
-router.get("/campaigns/:id/data", async ({ params }, env: Env) => {
-  const id = Number(params?.id || 0);
-  if (!id) return jsonResponse({ error: "invalid id" }, 400);
-
-  try {
-    const resp = await fetch(`${env.PYTHON_API_URL}/campaign_data/${id}`);
-    const data = await resp.json();
-    
-    if (!resp.ok) {
-      return jsonResponse({ error: "python error", details: data }, resp.status);
-    }
-    
-    return jsonResponse(data);
-  } catch (err) {
-    console.error("get campaign data error", err);
-    return jsonResponse({ error: "api request failed" }, 500);
-  }
-});
-
-// Update campaign data
-router.post("/campaigns/:id/update", async ({ params, request }, env: Env) => {
-  const id = Number(params?.id || 0);
-  if (!id) return jsonResponse({ error: "invalid id" }, 400);
-
-  try {
-    const body = await request.json();
-    const resp = await fetch(`${env.PYTHON_API_URL}/update_campaign/${id}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-
-    // persist limit in DB
-    let row: any;
-    try {
-      row = await env.DB.prepare(
-        "SELECT filters_json, message_text FROM campaigns WHERE id=?1",
-      )
-        .bind(id)
-        .first();
-    } catch {}
-    let filters: any = {};
-    try { filters = row && row.filters_json ? JSON.parse(row.filters_json) : {}; } catch {}
-    if ("limit" in body) {
-      if (body.limit === undefined || body.limit === null || Number(body.limit) <= 0) {
-        delete filters.limit;
-      } else {
-        filters.limit = Number(body.limit);
-      }
-    }
-    await env.DB.prepare(
-      "UPDATE campaigns SET message_text=?1, filters_json=?2 WHERE id=?3",
-    )
-      .bind(body.message || (row ? row.message_text : null), JSON.stringify(filters), id)
-      .run();
-    
-    const data: any = await resp.json();
-    if (data && data.categorization) {
-      console.log("categorization summary from python", data.categorization);
-    }
-    if (!resp.ok) {
-      return jsonResponse({ error: "python error", details: data }, resp.status);
-    }
-    
-    return jsonResponse(data);
-  } catch (err) {
-    console.error("update campaign error", err);
-    return jsonResponse({ error: "api request failed" }, 500);
-  }
-});
 
 // Resume campaign
 router.post("/campaigns/:id/resume", async ({ params }, env: Env) => {
@@ -1005,6 +955,49 @@ router.post("/categorize", async (request: Request, env: Env) => {
   return jsonResponse({ updated, logs });
 });
 
+// Trigger a categorization-only campaign to refresh chat overview
+router.post("/analytics/update", async (request: Request, env: Env) => {
+  const { account_id, telegram_session_id } = (await request.json()) as any;
+  const accountId = Number(account_id || 0);
+  const sessionId = Number(telegram_session_id || 0);
+  if (!accountId || !sessionId) return jsonResponse({ error: "missing parameters" }, 400);
+
+  const insertRes = await env.DB.prepare(
+    "INSERT INTO campaigns (account_id, telegram_session_id, message_text, status, filters_json) VALUES (?1, ?2, ?3, 'created', ?4)",
+  )
+    .bind(accountId, sessionId, 'Categorize chats', JSON.stringify({ categorize_only: true }))
+    .run();
+  const newId = insertRes.lastRowId;
+
+  const row = await env.DB.prepare(
+    `SELECT c.id, c.account_id, c.message_text, c.telegram_session_id, c.filters_json, t.encrypted_session_data
+     FROM campaigns c JOIN telegram_sessions t ON c.telegram_session_id=t.id
+     WHERE c.id=?1`,
+  )
+    .bind(newId)
+    .first();
+  if (!row) return jsonResponse({ error: "campaign not found" }, 500);
+  let filters: any = {};
+  try { filters = row.filters_json ? JSON.parse(row.filters_json) : {}; } catch {}
+  const requestBody = {
+    session: row.encrypted_session_data,
+    message: row.message_text,
+    account_id: row.account_id,
+    campaign_id: row.id,
+    ...filters,
+  };
+  await env.DB.prepare("UPDATE campaigns SET status=?1 WHERE id=?2")
+    .bind("running", newId)
+    .run();
+  await fetch(`${env.PYTHON_API_URL}/execute_campaign`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(requestBody),
+  });
+
+  return jsonResponse({ id: newId, status: "started" });
+});
+
 // Analytics summary
 router.get("/analytics/summary", async (request: Request, env: Env) => {
   const url = new URL(request.url);
@@ -1045,6 +1038,21 @@ router.get("/analytics/summary", async (request: Request, env: Env) => {
       .bind(accountId, sessionId)
       .first();
     console.log("revenueRow", revenueRow);
+
+    const lastStat = await env.DB.prepare(
+      "SELECT total_users FROM chat_overview_stats WHERE account_id=?1 ORDER BY created_at DESC LIMIT 1",
+    )
+      .bind(accountId)
+      .first();
+    const prevStat = await env.DB.prepare(
+      "SELECT total_users FROM chat_overview_stats WHERE account_id=?1 ORDER BY created_at DESC LIMIT 1 OFFSET 1",
+    )
+      .bind(accountId)
+      .first();
+    const chatOverview = {
+      total: lastStat?.total_users || 0,
+      growth: prevStat ? (lastStat?.total_users || 0) - (prevStat.total_users || 0) : (lastStat?.total_users || 0),
+    };
 
     const categoryRowsResult = await env.DB.prepare(
       `SELECT category, COUNT(*) as count FROM customer_categories WHERE account_id=?1 GROUP BY category`,
@@ -1094,6 +1102,7 @@ router.get("/analytics/summary", async (request: Request, env: Env) => {
         categories: categoryRows,
         campaigns: campaignRows,
         revenueByDay: revenueDayRows,
+        chatOverview,
       }),
       { headers: { "Content-Type": "application/json" } },
     );
@@ -1176,6 +1185,30 @@ const campaignStatusHandler = async ({ params }: { params: any }, env: Env) => {
   logs.push(`[STATUS] Success for campaign ${id}`);
   const safeData =
     data && typeof data === "object" && !Array.isArray(data) ? data : { data };
+  if (safeData.status && safeData.status !== "running") {
+    try {
+      await env.DB.prepare("UPDATE campaigns SET status=?1 WHERE id=?2")
+        .bind(safeData.status, id)
+        .run();
+      logs.push(`[STATUS] Updated campaign ${id} status to ${safeData.status}`);
+
+      if (safeData.status === "completed") {
+        const campRow: any = await env.DB.prepare(
+          "SELECT account_id, filters_json FROM campaigns WHERE id=?1",
+        )
+          .bind(id)
+          .first();
+        let filters: any = {};
+        try { filters = campRow?.filters_json ? JSON.parse(campRow.filters_json) : {}; } catch {}
+        if (filters.categorize_only) {
+          await recordUserCount(env, campRow.account_id);
+          logs.push(`[STATUS] Recorded user count for account ${campRow.account_id}`);
+        }
+      }
+    } catch (e) {
+      logs.push(`[STATUS] DB update error: ${e}`);
+    }
+  }
   return jsonResponse({ ...safeData, logs });
 };
 router.get("/campaigns/:id/status", campaignStatusHandler);
