@@ -128,7 +128,6 @@ export default function AnalyticsDashboard({ accountId, sessionId }) {
         console.error('analytics fetch', err)
       }
     }
-  }
 
   useEffect(() => {
     console.log('AnalyticsDashboard mounted', accountId, sessionId)
