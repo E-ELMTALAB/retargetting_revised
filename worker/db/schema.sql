@@ -101,3 +101,12 @@ CREATE TABLE campaign_sent (
     PRIMARY KEY (campaign_id, user_id),
     FOREIGN KEY (campaign_id) REFERENCES campaigns(id)
 );
+
+-- Snapshot of total categorized users over time
+CREATE TABLE chat_overview_stats (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    account_id INTEGER NOT NULL,
+    total_users INTEGER,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (account_id) REFERENCES accounts(id)
+);

@@ -33,10 +33,10 @@ export default function AnalyticsDashboard({ accountId, sessionId }) {
   const [categoryData, setCategoryData] = useState({ labels: [], datasets: [] })
   const [campaignData, setCampaignData] = useState({ labels: [], datasets: [] })
   const [topLines, setTopLines] = useState([])
+  const [chatStats, setChatStats] = useState({ total: 0, growth: 0 })
+  const [updating, setUpdating] = useState(false)
 
-  useEffect(() => {
-    console.log('AnalyticsDashboard mounted', accountId, sessionId)
-    const fetchData = async () => {
+  const fetchData = async () => {
       try {
         console.log('Fetching analytics summary...')
         const url = `${API_BASE}/analytics/summary?account_id=${accountId}&session_id=${sessionId || ''}`
@@ -120,12 +120,38 @@ export default function AnalyticsDashboard({ accountId, sessionId }) {
         }
         console.log('Top lines:', lines)
         setTopLines(lines.slice(0, 3))
+        setChatStats({
+          total: data.chatOverview?.total || 0,
+          growth: data.chatOverview?.growth || 0
+        })
       } catch (err) {
         console.error('analytics fetch', err)
       }
     }
+  }
+
+  useEffect(() => {
+    console.log('AnalyticsDashboard mounted', accountId, sessionId)
     fetchData()
   }, [accountId, sessionId])
+
+  const runUpdate = async () => {
+    setUpdating(true)
+    try {
+      const resp = await fetch(`${API_BASE}/analytics/update`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ account_id: accountId, telegram_session_id: sessionId })
+      })
+      const data = await resp.json()
+      console.log('Update response', data)
+      fetchData()
+    } catch (e) {
+      console.error('update error', e)
+    } finally {
+      setUpdating(false)
+    }
+  }
 
   useEffect(() => {
     console.log('metrics state updated:', metrics)
@@ -147,6 +173,20 @@ export default function AnalyticsDashboard({ accountId, sessionId }) {
 
     <div className="p-4 space-y-6">
       <h2 className="text-2xl mb-4 font-semibold">Analytics Dashboard</h2>
+
+      <div className="bg-white p-4 rounded shadow flex items-center justify-between">
+        <div>
+          <p className="text-sm">Total Users: {chatStats.total}</p>
+          <p className="text-sm">Growth Since Last: {chatStats.growth}</p>
+        </div>
+        <button
+          onClick={runUpdate}
+          className="px-3 py-1 bg-blue-600 text-white rounded"
+          disabled={updating}
+        >
+          {updating ? 'Running...' : 'Update'}
+        </button>
+      </div>
 
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
         {metrics.map(m => (

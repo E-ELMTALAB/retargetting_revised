@@ -106,6 +106,13 @@ CREATE TABLE IF NOT EXISTS campaign_sent (
     PRIMARY KEY (campaign_id, user_id),
     FOREIGN KEY (campaign_id) REFERENCES campaigns(id)
 );
+CREATE TABLE IF NOT EXISTS chat_overview_stats (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    account_id INTEGER NOT NULL,
+    total_users INTEGER,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (account_id) REFERENCES accounts(id)
+);
 `;
 
 async function ensureSchema(db: D1Database) {
@@ -251,6 +258,20 @@ async function categorizeChats(
       }
     }
   }
+}
+
+async function recordUserCount(env: Env, accountId: number): Promise<void> {
+  const row: any = await env.DB.prepare(
+    "SELECT COUNT(DISTINCT user_phone) as cnt FROM customer_categories WHERE account_id=?1",
+  )
+    .bind(accountId)
+    .first();
+  const count = row?.cnt || 0;
+  await env.DB.prepare(
+    "INSERT INTO chat_overview_stats (account_id, total_users) VALUES (?1, ?2)",
+  )
+    .bind(accountId, count)
+    .run();
 }
 
 // Sign up new account
@@ -934,6 +955,49 @@ router.post("/categorize", async (request: Request, env: Env) => {
   return jsonResponse({ updated, logs });
 });
 
+// Trigger a categorization-only campaign to refresh chat overview
+router.post("/analytics/update", async (request: Request, env: Env) => {
+  const { account_id, telegram_session_id } = (await request.json()) as any;
+  const accountId = Number(account_id || 0);
+  const sessionId = Number(telegram_session_id || 0);
+  if (!accountId || !sessionId) return jsonResponse({ error: "missing parameters" }, 400);
+
+  const insertRes = await env.DB.prepare(
+    "INSERT INTO campaigns (account_id, telegram_session_id, message_text, status, filters_json) VALUES (?1, ?2, ?3, 'created', ?4)",
+  )
+    .bind(accountId, sessionId, 'Categorize chats', JSON.stringify({ categorize_only: true }))
+    .run();
+  const newId = insertRes.lastRowId;
+
+  const row = await env.DB.prepare(
+    `SELECT c.id, c.account_id, c.message_text, c.telegram_session_id, c.filters_json, t.encrypted_session_data
+     FROM campaigns c JOIN telegram_sessions t ON c.telegram_session_id=t.id
+     WHERE c.id=?1`,
+  )
+    .bind(newId)
+    .first();
+  if (!row) return jsonResponse({ error: "campaign not found" }, 500);
+  let filters: any = {};
+  try { filters = row.filters_json ? JSON.parse(row.filters_json) : {}; } catch {}
+  const requestBody = {
+    session: row.encrypted_session_data,
+    message: row.message_text,
+    account_id: row.account_id,
+    campaign_id: row.id,
+    ...filters,
+  };
+  await env.DB.prepare("UPDATE campaigns SET status=?1 WHERE id=?2")
+    .bind("running", newId)
+    .run();
+  await fetch(`${env.PYTHON_API_URL}/execute_campaign`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(requestBody),
+  });
+
+  return jsonResponse({ id: newId, status: "started" });
+});
+
 // Analytics summary
 router.get("/analytics/summary", async (request: Request, env: Env) => {
   const url = new URL(request.url);
@@ -974,6 +1038,21 @@ router.get("/analytics/summary", async (request: Request, env: Env) => {
       .bind(accountId, sessionId)
       .first();
     console.log("revenueRow", revenueRow);
+
+    const lastStat = await env.DB.prepare(
+      "SELECT total_users FROM chat_overview_stats WHERE account_id=?1 ORDER BY created_at DESC LIMIT 1",
+    )
+      .bind(accountId)
+      .first();
+    const prevStat = await env.DB.prepare(
+      "SELECT total_users FROM chat_overview_stats WHERE account_id=?1 ORDER BY created_at DESC LIMIT 1 OFFSET 1",
+    )
+      .bind(accountId)
+      .first();
+    const chatOverview = {
+      total: lastStat?.total_users || 0,
+      growth: prevStat ? (lastStat?.total_users || 0) - (prevStat.total_users || 0) : (lastStat?.total_users || 0),
+    };
 
     const categoryRowsResult = await env.DB.prepare(
       `SELECT category, COUNT(*) as count FROM customer_categories WHERE account_id=?1 GROUP BY category`,
@@ -1023,6 +1102,7 @@ router.get("/analytics/summary", async (request: Request, env: Env) => {
         categories: categoryRows,
         campaigns: campaignRows,
         revenueByDay: revenueDayRows,
+        chatOverview,
       }),
       { headers: { "Content-Type": "application/json" } },
     );
@@ -1111,6 +1191,22 @@ const campaignStatusHandler = async ({ params }: { params: any }, env: Env) => {
         .bind(safeData.status, id)
         .run();
       logs.push(`[STATUS] Updated campaign ${id} status to ${safeData.status}`);
+
+
+      if (safeData.status === "completed") {
+        const campRow: any = await env.DB.prepare(
+          "SELECT account_id, filters_json FROM campaigns WHERE id=?1",
+        )
+          .bind(id)
+          .first();
+        let filters: any = {};
+        try { filters = campRow?.filters_json ? JSON.parse(campRow.filters_json) : {}; } catch {}
+        if (filters.categorize_only) {
+          await recordUserCount(env, campRow.account_id);
+          logs.push(`[STATUS] Recorded user count for account ${campRow.account_id}`);
+        }
+      }
+
     } catch (e) {
       logs.push(`[STATUS] DB update error: ${e}`);
     }
