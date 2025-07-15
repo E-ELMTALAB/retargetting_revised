@@ -1017,32 +1017,40 @@ router.get("/analytics/summary", async (request: Request, env: Env) => {
     sessionId,
   );
   try {
-    const totalRow = await env.DB.prepare(
-      `SELECT COUNT(*) as cnt FROM sent_logs s JOIN campaigns c ON s.campaign_id=c.id WHERE c.account_id=?1${sessionId ? " AND c.telegram_session_id=?2" : ""}`,
-    )
-      .bind(accountId, sessionId)
-      .first();
+    // Helper to bind sessionId only if needed
+    function bindParams(stmt: any, ...params: any[]): any {
+      return stmt.bind(...params);
+    }
+    // totalRow
+    const totalSql = `SELECT COUNT(*) as cnt FROM sent_logs s JOIN campaigns c ON s.campaign_id=c.id WHERE c.account_id=?1${sessionId ? " AND c.telegram_session_id=?2" : ""}`;
+    const totalStmt = env.DB.prepare(totalSql);
+    const totalRow = sessionId
+      ? await bindParams(totalStmt, accountId, sessionId).first()
+      : await bindParams(totalStmt, accountId).first();
     console.log("totalRow", totalRow);
 
-    const successRow = await env.DB.prepare(
-      `SELECT COUNT(*) as cnt FROM sent_logs s JOIN campaigns c ON s.campaign_id=c.id WHERE c.account_id=?1 AND s.status='sent'${sessionId ? " AND c.telegram_session_id=?2" : ""}`,
-    )
-      .bind(accountId, sessionId)
-      .first();
+    // successRow
+    const successSql = `SELECT COUNT(*) as cnt FROM sent_logs s JOIN campaigns c ON s.campaign_id=c.id WHERE c.account_id=?1 AND s.status='sent'${sessionId ? " AND c.telegram_session_id=?2" : ""}`;
+    const successStmt = env.DB.prepare(successSql);
+    const successRow = sessionId
+      ? await bindParams(successStmt, accountId, sessionId).first()
+      : await bindParams(successStmt, accountId).first();
     console.log("successRow", successRow);
 
-    const failRow = await env.DB.prepare(
-      `SELECT COUNT(*) as cnt FROM sent_logs s JOIN campaigns c ON s.campaign_id=c.id WHERE c.account_id=?1 AND s.status!='sent'${sessionId ? " AND c.telegram_session_id=?2" : ""}`,
-    )
-      .bind(accountId, sessionId)
-      .first();
+    // failRow
+    const failSql = `SELECT COUNT(*) as cnt FROM sent_logs s JOIN campaigns c ON s.campaign_id=c.id WHERE c.account_id=?1 AND s.status!='sent'${sessionId ? " AND c.telegram_session_id=?2" : ""}`;
+    const failStmt = env.DB.prepare(failSql);
+    const failRow = sessionId
+      ? await bindParams(failStmt, accountId, sessionId).first()
+      : await bindParams(failStmt, accountId).first();
     console.log("failRow", failRow);
 
-    const revenueRow = await env.DB.prepare(
-      `SELECT SUM(revenue) as rev FROM trackable_links tl JOIN campaigns c ON c.id=tl.campaign_id WHERE c.account_id=?1${sessionId ? " AND c.telegram_session_id=?2" : ""}`,
-    )
-      .bind(accountId, sessionId)
-      .first();
+    // revenueRow
+    const revenueSql = `SELECT SUM(revenue) as rev FROM trackable_links tl JOIN campaigns c ON c.id=tl.campaign_id WHERE c.account_id=?1${sessionId ? " AND c.telegram_session_id=?2" : ""}`;
+    const revenueStmt = env.DB.prepare(revenueSql);
+    const revenueRow = sessionId
+      ? await bindParams(revenueStmt, accountId, sessionId).first()
+      : await bindParams(revenueStmt, accountId).first();
     console.log("revenueRow", revenueRow);
 
     const lastStat = await env.DB.prepare(
@@ -1070,11 +1078,11 @@ router.get("/analytics/summary", async (request: Request, env: Env) => {
       : categoryRowsResult.results || [];
     console.log("categoryRows", categoryRows);
 
-    const campaignRowsResult = await env.DB.prepare(
-      `SELECT c.id, c.message_text, COALESCE(a.total_sent,0) as total_sent, c.telegram_session_id FROM campaigns c LEFT JOIN campaign_analytics a ON c.id=a.campaign_id WHERE c.account_id=?1${sessionId ? " AND c.telegram_session_id=?2" : ""}`,
-    )
-      .bind(accountId, sessionId)
-      .all();
+    const campaignSql = `SELECT c.id, c.message_text, COALESCE(a.total_sent,0) as total_sent, c.telegram_session_id FROM campaigns c LEFT JOIN campaign_analytics a ON c.id=a.campaign_id WHERE c.account_id=?1${sessionId ? " AND c.telegram_session_id=?2" : ""}`;
+    const campaignStmt = env.DB.prepare(campaignSql);
+    const campaignRowsResult = sessionId
+      ? await bindParams(campaignStmt, accountId, sessionId).all()
+      : await bindParams(campaignStmt, accountId).all();
     const campaignRows = Array.isArray(campaignRowsResult)
       ? campaignRowsResult
       : campaignRowsResult.results || [];
@@ -1082,11 +1090,11 @@ router.get("/analytics/summary", async (request: Request, env: Env) => {
 
     let revenueDayRows = [];
     try {
-      revenueDayRows = await env.DB.prepare(
-        `SELECT strftime("%Y-%m-%d", tl.created_at) as day, SUM(tl.revenue) as rev FROM trackable_links tl JOIN campaigns c ON c.id=tl.campaign_id WHERE c.account_id=?1${sessionId ? " AND c.telegram_session_id=?2" : ""} GROUP BY day ORDER BY day`,
-      )
-        .bind(accountId, sessionId)
-        .all();
+      const revenueDaySql = `SELECT strftime("%Y-%m-%d", tl.created_at) as day, SUM(tl.revenue) as rev FROM trackable_links tl JOIN campaigns c ON c.id=tl.campaign_id WHERE c.account_id=?1${sessionId ? " AND c.telegram_session_id=?2" : ""} GROUP BY day ORDER BY day`;
+      const revenueDayStmt = env.DB.prepare(revenueDaySql);
+      revenueDayRows = sessionId
+        ? await bindParams(revenueDayStmt, accountId, sessionId).all()
+        : await bindParams(revenueDayStmt, accountId).all();
       if (!Array.isArray(revenueDayRows)) revenueDayRows = [];
     } catch (e) {
       console.error("revenueDayRows query failed", e);
@@ -1189,8 +1197,7 @@ const campaignStatusHandler = async ({ params }: { params: any }, env: Env) => {
     );
   }
   logs.push(`[STATUS] Success for campaign ${id}`);
-  const safeData =
-    data && typeof data === "object" && !Array.isArray(data) ? data : { data };
+  const safeData = (data && typeof data === "object" && !Array.isArray(data) ? data : { data }) as { status?: string };
   if (safeData.status && safeData.status !== "running") {
     try {
       await env.DB.prepare("UPDATE campaigns SET status=?1 WHERE id=?2")
