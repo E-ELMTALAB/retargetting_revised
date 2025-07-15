@@ -12,4 +12,4 @@ PYTHON_API_URL = "https://retargetting-slave-api-production.up.railway.app"
 [[d1_databases]]
 binding = "DB"
 database_name = "retargetting"
-database_id = "a755ad09-8fc6-43f9-b2c5-db8da653fdeb"
+database_id = "917d58e1-580b-4d33-8057-e6783a48d359"
