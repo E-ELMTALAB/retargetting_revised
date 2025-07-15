@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   Chart,
   CategoryScale,
@@ -35,6 +36,8 @@ export default function AnalyticsDashboard({ accountId, sessionId }) {
   const [topLines, setTopLines] = useState([])
   const [chatStats, setChatStats] = useState({ total: 0, growth: 0 })
   const [updating, setUpdating] = useState(false)
+  const [updateId, setUpdateId] = useState(() => localStorage.getItem('categoryUpdateId'))
+  const navigate = useNavigate()
 
   const fetchData = async () => {
       try {
@@ -134,6 +137,27 @@ export default function AnalyticsDashboard({ accountId, sessionId }) {
     fetchData()
   }, [accountId, sessionId])
 
+  useEffect(() => {
+    if (!accountId) return
+    fetch(`${API_BASE}/campaigns?account_id=${accountId}`)
+      .then(r => r.json())
+      .then(d => {
+        const camps = d.campaigns || []
+        for (const c of camps) {
+          let f = {}
+          try { f = c.filters_json ? JSON.parse(c.filters_json) : {} } catch {}
+          if (f.categorize_only && c.status !== 'completed') {
+            setUpdateId(String(c.id))
+            localStorage.setItem('categoryUpdateId', String(c.id))
+            return
+          }
+        }
+        setUpdateId(null)
+        localStorage.removeItem('categoryUpdateId')
+      })
+      .catch(e => console.error('fetch campaigns', e))
+  }, [accountId])
+
   const runUpdate = async () => {
     setUpdating(true)
     try {
@@ -144,6 +168,10 @@ export default function AnalyticsDashboard({ accountId, sessionId }) {
       })
       const data = await resp.json()
       console.log('Update response', data)
+      if (resp.ok && data.campaign_id) {
+        setUpdateId(String(data.campaign_id))
+        localStorage.setItem('categoryUpdateId', String(data.campaign_id))
+      }
       fetchData()
     } catch (e) {
       console.error('update error', e)
@@ -178,13 +206,25 @@ export default function AnalyticsDashboard({ accountId, sessionId }) {
           <p className="text-sm">Total Users: {chatStats.total}</p>
           <p className="text-sm">Growth Since Last: {chatStats.growth}</p>
         </div>
-        <button
-          onClick={runUpdate}
-          className="px-3 py-1 bg-blue-600 text-white rounded"
-          disabled={updating}
-        >
-          {updating ? 'Running...' : 'Update'}
-        </button>
+        {updateId ? (
+          <div className="flex items-center gap-2">
+            <span className="px-3 py-1 bg-purple-600 text-white rounded text-sm">Running</span>
+            <button
+              onClick={() => navigate('/monitor')}
+              className="px-3 py-1 bg-blue-600 text-white rounded"
+            >
+              Monitor
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={runUpdate}
+            className="px-3 py-1 bg-blue-600 text-white rounded"
+            disabled={updating}
+          >
+            {updating ? 'Starting...' : 'Update'}
+          </button>
+        )}
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4">

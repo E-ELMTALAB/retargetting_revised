@@ -1341,5 +1341,77 @@ async def _resume_send(campaign_id):
         CAMPAIGN_STATUS[campaign_id]['error'] = str(e)
         print(f"[ERROR] Resume campaign {campaign_id} failed: {e}")
 
+
+@app.route('/categorize_all', methods=['POST'])
+def categorize_all_route():
+    """Iterate over all dialogs and categorize chats asynchronously."""
+    data = request.get_json(force=True) or {}
+    session_str = data.get('session')
+    account_id = data.get('account_id')
+    campaign_id = data.get('campaign_id')
+    categories = data.get('categories')
+
+    if not session_str or not account_id or campaign_id is None:
+        return jsonify({'error': 'missing parameters'}), 400
+
+    if not categories:
+        categories = fetch_categories(account_id)
+
+    CAMPAIGN_STATUS[campaign_id] = {
+        'status': 'running',
+        'started_at': datetime.now().isoformat(),
+        'sent_count': 0,
+        'failed_count': 0,
+        'neglected_count': 0,
+        'current_recipient': None,
+        'total_recipients': 0,
+    }
+    CAMPAIGN_LOGS[campaign_id] = []
+    CAMPAIGN_DATA[campaign_id] = {
+        'session': session_str,
+        'account_id': account_id,
+    }
+
+    async def _run():
+        client = get_telegram_client(session_str)
+        await client.connect()
+        processed = 0
+        try:
+            async for dialog in client.iter_dialogs():
+                entity = getattr(dialog, 'entity', None)
+                if not entity or getattr(entity, 'bot', False):
+                    CAMPAIGN_STATUS[campaign_id]['neglected_count'] += 1
+                    continue
+                if not getattr(dialog, 'is_user', False):
+                    CAMPAIGN_STATUS[campaign_id]['neglected_count'] += 1
+                    continue
+                CAMPAIGN_STATUS[campaign_id]['current_recipient'] = (
+                    getattr(entity, 'username', None) or str(entity.id)
+                )
+                await categorize_user(
+                    client, entity, categories, account_id, campaign_id
+                )
+                processed += 1
+                CAMPAIGN_STATUS[campaign_id]['sent_count'] = processed
+                CAMPAIGN_STATUS[campaign_id]['total_recipients'] = processed
+        finally:
+            CAMPAIGN_STATUS[campaign_id]['current_recipient'] = None
+            CAMPAIGN_STATUS[campaign_id]['completed_at'] = datetime.now().isoformat()
+            CAMPAIGN_STATUS[campaign_id]['status'] = 'completed'
+            await client.disconnect()
+
+    def _run_thread():
+        try:
+            asyncio.run(_run())
+        except Exception as e:
+            CAMPAIGN_STATUS[campaign_id]['status'] = 'failed'
+            CAMPAIGN_STATUS[campaign_id]['error'] = str(e)
+
+    thread = threading.Thread(target=_run_thread, daemon=True)
+    CAMPAIGN_THREADS[campaign_id] = thread
+    thread.start()
+
+    return jsonify({'status': 'started', 'campaign_id': campaign_id})
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
