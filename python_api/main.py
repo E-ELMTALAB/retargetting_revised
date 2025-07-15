@@ -1344,6 +1344,7 @@ async def _resume_send(campaign_id):
 
 @app.route('/categorize_all', methods=['POST'])
 def categorize_all_route():
+
     """Iterate over all dialogs and categorize chats asynchronously."""
     data = request.get_json(force=True) or {}
     session_str = data.get('session')
@@ -1352,10 +1353,12 @@ def categorize_all_route():
     categories = data.get('categories')
 
     if not session_str or not account_id or campaign_id is None:
+
         return jsonify({'error': 'missing parameters'}), 400
 
     if not categories:
         categories = fetch_categories(account_id)
+
 
     CAMPAIGN_STATUS[campaign_id] = {
         'status': 'running',
@@ -1412,6 +1415,7 @@ def categorize_all_route():
     thread.start()
 
     return jsonify({'status': 'started', 'campaign_id': campaign_id})
+
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)

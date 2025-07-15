@@ -955,7 +955,9 @@ router.post("/categorize", async (request: Request, env: Env) => {
   return jsonResponse({ updated, logs });
 });
 
+
 // Categorize all chats for an account and create a monitoring campaign
+
 router.post("/analytics/update", async (request: Request, env: Env) => {
   const { account_id, telegram_session_id } = (await request.json()) as any;
   const accountId = Number(account_id || 0);
@@ -971,6 +973,7 @@ router.post("/analytics/update", async (request: Request, env: Env) => {
     .run();
   const newId = insertRes.lastRowId;
 
+
   const row = await env.DB.prepare(
     "SELECT encrypted_session_data FROM telegram_sessions WHERE id=?1 AND account_id=?2",
   )
@@ -979,6 +982,7 @@ router.post("/analytics/update", async (request: Request, env: Env) => {
   if (!row || !row.encrypted_session_data) {
     return jsonResponse({ error: "session not found" }, 400);
   }
+
 
   try {
     await fetch(`${env.PYTHON_API_URL}/categorize_all`, {
@@ -989,6 +993,7 @@ router.post("/analytics/update", async (request: Request, env: Env) => {
         account_id: accountId,
         campaign_id: newId,
       }),
+
     });
   } catch (err) {
     console.error("categorize_all fetch error", err);
@@ -996,6 +1001,7 @@ router.post("/analytics/update", async (request: Request, env: Env) => {
   }
 
   return jsonResponse({ campaign_id: newId, status: "started" });
+
 });
 
 // Analytics summary
