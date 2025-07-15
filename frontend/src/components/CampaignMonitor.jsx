@@ -44,10 +44,14 @@ export default function CampaignMonitor({ accountId }) {
       console.log('Running campaigns data:', data)
       
       if (response.ok) {
-        const allCampaigns = data.campaigns || []
+        const allCampaigns = (data.campaigns || []).map(c => {
+          let f = {}
+          try { f = c.filters_json ? JSON.parse(c.filters_json) : {} } catch {}
+          return { ...c, categoryUpdate: !!f.categorize_only }
+        })
         const runningCampaigns = allCampaigns.filter(c => c.status === 'running')
         const stoppedCampaigns = allCampaigns.filter(c => c.status === 'stopped' || c.status === 'completed')
-        
+
         setRunning([...runningCampaigns, ...stoppedCampaigns])
         
         // If no active campaign is selected and there are campaigns, select the first one
@@ -193,17 +197,21 @@ export default function CampaignMonitor({ accountId }) {
                 onClick={() => {
                   setActiveId(c.id)
                 }}
-                className={`cursor-pointer p-2 border rounded ${c.id === activeId ? 'bg-blue-50 border-blue-300' : 'hover:bg-gray-50'}`}
+                className={`cursor-pointer p-2 border rounded ${c.categoryUpdate ? 'bg-purple-50 border-purple-300' : c.id === activeId ? 'bg-blue-50 border-blue-300' : 'hover:bg-gray-50'}`}
               >
                 <div className="flex justify-between items-start">
                   <div className="flex-1">
-                    <p className="text-sm font-medium">Campaign #{c.id}</p>
-                    <p className="text-xs text-gray-600">{c.message_text?.slice(0, 60)}...</p>
+                    <p className="text-sm font-medium">{c.categoryUpdate ? 'Category Update' : `Campaign #${c.id}`}</p>
+                    {!c.categoryUpdate && (
+                      <p className="text-xs text-gray-600">{c.message_text?.slice(0, 60)}...</p>
+                    )}
                     <p className="text-xs text-gray-500">Status: {c.status}</p>
                   </div>
                   <div className="flex gap-1 ml-2">
 
-                    {c.status === 'stopped' ? (
+                    {c.categoryUpdate ? (
+                      <span className="px-2 py-1 text-xs bg-purple-200 text-purple-800 rounded">Update</span>
+                    ) : c.status === 'stopped' ? (
                       <button
                         onClick={(e) => {
                           e.stopPropagation()

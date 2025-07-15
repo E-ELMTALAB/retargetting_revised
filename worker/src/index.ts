@@ -955,7 +955,9 @@ router.post("/categorize", async (request: Request, env: Env) => {
   return jsonResponse({ updated, logs });
 });
 
-// Categorize all chats for an account and update stats
+
+// Categorize all chats for an account and create a monitoring campaign
+
 router.post("/analytics/update", async (request: Request, env: Env) => {
   const { account_id, telegram_session_id } = (await request.json()) as any;
   const accountId = Number(account_id || 0);
@@ -963,6 +965,14 @@ router.post("/analytics/update", async (request: Request, env: Env) => {
   if (!accountId || !sessionId) {
     return jsonResponse({ error: "missing parameters" }, 400);
   }
+
+  const insertRes = await env.DB.prepare(
+    "INSERT INTO campaigns (account_id, telegram_session_id, message_text, status, filters_json) VALUES (?1, ?2, ?3, 'running', ?4)",
+  )
+    .bind(accountId, sessionId, "Category Update", JSON.stringify({ categorize_only: true }))
+    .run();
+  const newId = insertRes.lastRowId;
+
 
   const row = await env.DB.prepare(
     "SELECT encrypted_session_data FROM telegram_sessions WHERE id=?1 AND account_id=?2",
@@ -973,24 +983,25 @@ router.post("/analytics/update", async (request: Request, env: Env) => {
     return jsonResponse({ error: "session not found" }, 400);
   }
 
-  let resp: Response;
+
   try {
-    resp = await fetch(`${env.PYTHON_API_URL}/categorize_all`, {
+    await fetch(`${env.PYTHON_API_URL}/categorize_all`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ session: row.encrypted_session_data, account_id: accountId }),
+      body: JSON.stringify({
+        session: row.encrypted_session_data,
+        account_id: accountId,
+        campaign_id: newId,
+      }),
+
     });
   } catch (err) {
     console.error("categorize_all fetch error", err);
     return jsonResponse({ error: "python request failed" }, 500);
   }
-  const data = await resp.json().catch(() => ({}));
-  if (!resp.ok) {
-    return jsonResponse({ error: "python error", details: data }, resp.status);
-  }
 
-  await recordUserCount(env, accountId);
-  return jsonResponse({ result: data });
+  return jsonResponse({ campaign_id: newId, status: "started" });
+
 });
 
 // Analytics summary
