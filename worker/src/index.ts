@@ -955,47 +955,42 @@ router.post("/categorize", async (request: Request, env: Env) => {
   return jsonResponse({ updated, logs });
 });
 
-// Trigger a categorization-only campaign to refresh chat overview
+// Categorize all chats for an account and update stats
 router.post("/analytics/update", async (request: Request, env: Env) => {
   const { account_id, telegram_session_id } = (await request.json()) as any;
   const accountId = Number(account_id || 0);
   const sessionId = Number(telegram_session_id || 0);
-  if (!accountId || !sessionId) return jsonResponse({ error: "missing parameters" }, 400);
-
-  const insertRes = await env.DB.prepare(
-    "INSERT INTO campaigns (account_id, telegram_session_id, message_text, status, filters_json) VALUES (?1, ?2, ?3, 'created', ?4)",
-  )
-    .bind(accountId, sessionId, 'Categorize chats', JSON.stringify({ categorize_only: true }))
-    .run();
-  const newId = insertRes.lastRowId;
+  if (!accountId || !sessionId) {
+    return jsonResponse({ error: "missing parameters" }, 400);
+  }
 
   const row = await env.DB.prepare(
-    `SELECT c.id, c.account_id, c.message_text, c.telegram_session_id, c.filters_json, t.encrypted_session_data
-     FROM campaigns c JOIN telegram_sessions t ON c.telegram_session_id=t.id
-     WHERE c.id=?1`,
+    "SELECT encrypted_session_data FROM telegram_sessions WHERE id=?1 AND account_id=?2",
   )
-    .bind(newId)
+    .bind(sessionId, accountId)
     .first();
-  if (!row) return jsonResponse({ error: "campaign not found" }, 500);
-  let filters: any = {};
-  try { filters = row.filters_json ? JSON.parse(row.filters_json) : {}; } catch {}
-  const requestBody = {
-    session: row.encrypted_session_data,
-    message: row.message_text,
-    account_id: row.account_id,
-    campaign_id: row.id,
-    ...filters,
-  };
-  await env.DB.prepare("UPDATE campaigns SET status=?1 WHERE id=?2")
-    .bind("running", newId)
-    .run();
-  await fetch(`${env.PYTHON_API_URL}/execute_campaign`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(requestBody),
-  });
+  if (!row || !row.encrypted_session_data) {
+    return jsonResponse({ error: "session not found" }, 400);
+  }
 
-  return jsonResponse({ id: newId, status: "started" });
+  let resp: Response;
+  try {
+    resp = await fetch(`${env.PYTHON_API_URL}/categorize_all`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ session: row.encrypted_session_data, account_id: accountId }),
+    });
+  } catch (err) {
+    console.error("categorize_all fetch error", err);
+    return jsonResponse({ error: "python request failed" }, 500);
+  }
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok) {
+    return jsonResponse({ error: "python error", details: data }, resp.status);
+  }
+
+  await recordUserCount(env, accountId);
+  return jsonResponse({ result: data });
 });
 
 // Analytics summary

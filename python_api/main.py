@@ -1341,5 +1341,49 @@ async def _resume_send(campaign_id):
         CAMPAIGN_STATUS[campaign_id]['error'] = str(e)
         print(f"[ERROR] Resume campaign {campaign_id} failed: {e}")
 
+
+@app.route('/categorize_all', methods=['POST'])
+def categorize_all_route():
+    """Iterate over all dialogs and categorize chats."""
+    data = request.get_json(force=True) or {}
+    session_str = data.get('session')
+    account_id = data.get('account_id')
+    categories = data.get('categories')
+
+    if not session_str or not account_id:
+        return jsonify({'error': 'missing parameters'}), 400
+
+    if not categories:
+        categories = fetch_categories(account_id)
+
+    processed = 0
+
+    async def _run():
+        nonlocal processed
+        client = get_telegram_client(session_str)
+        await client.connect()
+        try:
+            async for dialog in client.iter_dialogs():
+                entity = getattr(dialog, 'entity', None)
+                if not entity:
+                    continue
+                if getattr(entity, 'bot', False):
+                    continue
+                if not getattr(dialog, 'is_user', False):
+                    continue
+                await categorize_user(
+                    client, entity, categories, account_id, data.get('campaign_id')
+                )
+                processed += 1
+        finally:
+            await client.disconnect()
+
+    try:
+        asyncio.run(_run())
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+    return jsonify({'processed': processed})
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
