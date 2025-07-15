@@ -7,7 +7,7 @@ const API_BASE =
 export default function CampaignMonitor({ accountId }) {
   const [progress, setProgress] = useState(0)
   const [logs, setLogs] = useState([])
-  const [running, setRunning] = useState([])
+  const [activeCampaign, setActiveCampaign] = useState(null)
   const [activeId, setActiveId] = useState(null)
   const [campaignStatus, setCampaignStatus] = useState({})
   const [loading, setLoading] = useState(false)
@@ -41,22 +41,22 @@ export default function CampaignMonitor({ accountId }) {
     try {
       const response = await fetch(`${API_BASE}/campaigns?account_id=${accountId}`)
       const data = await response.json()
-      console.log('Running campaigns data:', data)
-      
       if (response.ok) {
         const allCampaigns = (data.campaigns || []).map(c => {
           let f = {}
           try { f = c.filters_json ? JSON.parse(c.filters_json) : {} } catch {}
           return { ...c, categoryUpdate: !!f.categorize_only }
         })
+        // Only keep the most recent running campaign
         const runningCampaigns = allCampaigns.filter(c => c.status === 'running')
-        const stoppedCampaigns = allCampaigns.filter(c => c.status === 'stopped' || c.status === 'completed')
-
-        setRunning([...runningCampaigns, ...stoppedCampaigns])
-        
-        // If no active campaign is selected and there are campaigns, select the first one
-        if (!activeId && allCampaigns.length > 0) {
-          setActiveId(allCampaigns[0].id)
+        if (runningCampaigns.length > 0) {
+          // Pick the most recent (highest id)
+          const mostRecent = runningCampaigns.reduce((a, b) => (a.id > b.id ? a : b))
+          setActiveCampaign(mostRecent)
+          setActiveId(mostRecent.id)
+        } else {
+          setActiveCampaign(null)
+          setActiveId(null)
         }
       } else {
         setError(`Failed to fetch campaigns: ${data.error || 'Unknown error'}`)
@@ -113,6 +113,7 @@ export default function CampaignMonitor({ accountId }) {
   useEffect(() => {
     if (initialMount.current) {
       setActiveId(null)
+      setActiveCampaign(null)
       initialMount.current = false
     }
   }, [])
@@ -172,7 +173,6 @@ export default function CampaignMonitor({ accountId }) {
   return (
     <div className="p-4 space-y-4">
       <h2 className="text-2xl mb-2 font-semibold">Campaign Monitor</h2>
-      
       {error && (
         <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
           <strong>Error:</strong> {error}
@@ -184,71 +184,9 @@ export default function CampaignMonitor({ accountId }) {
           </button>
         </div>
       )}
-
-      <div>
-        <h3 className="font-medium mb-1">Campaigns</h3>
-        {running.length === 0 ? (
-          <p className="text-sm text-gray-500">No campaigns</p>
-        ) : (
-          <ul className="space-y-1">
-            {running.map(c => (
-              <li
-                key={c.id}
-                onClick={() => {
-                  setActiveId(c.id)
-                }}
-                className={`cursor-pointer p-2 border rounded ${c.categoryUpdate ? 'bg-purple-50 border-purple-300' : c.id === activeId ? 'bg-blue-50 border-blue-300' : 'hover:bg-gray-50'}`}
-              >
-                <div className="flex justify-between items-start">
-                  <div className="flex-1">
-                    <p className="text-sm font-medium">{c.categoryUpdate ? 'Category Update' : `Campaign #${c.id}`}</p>
-                    {!c.categoryUpdate && (
-                      <p className="text-xs text-gray-600">{c.message_text?.slice(0, 60)}...</p>
-                    )}
-                    <p className="text-xs text-gray-500">Status: {c.status}</p>
-                  </div>
-                  <div className="flex gap-1 ml-2">
-
-                    {c.categoryUpdate ? (
-                      <span className="px-2 py-1 text-xs bg-purple-200 text-purple-800 rounded">Update</span>
-                    ) : c.status === 'stopped' ? (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          resumeCampaign(c.id)
-                        }}
-                        disabled={loading}
-                        className="px-2 py-1 text-xs bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50"
-                      >
-                        {loading
-                          ? 'Resuming...'
-                          : c.status === 'completed'
-                          ? 'Retry'
-                          : 'Resume'}
-                      </button>
-                    ) : c.status === 'completed' ? (
-                      <span className="px-2 py-1 text-xs bg-gray-300 text-gray-700 rounded">Completed</span>
-                    ) : (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          stopCampaign(c.id)
-                        }}
-                        disabled={loading}
-                        className="px-2 py-1 text-xs bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-50"
-                      >
-                        {loading ? 'Stopping...' : 'Stop'}
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-
-      {activeId && (
+      {!activeCampaign ? (
+        <p className="text-sm text-gray-500">No running campaigns</p>
+      ) : activeId ? (
         <div className="flex flex-col md:flex-row gap-6 border rounded p-4 bg-white shadow">
           <div className="flex-1 space-y-4">
             <div>
@@ -321,7 +259,7 @@ export default function CampaignMonitor({ accountId }) {
             </div>
           </div>
         </div>
-      )}
+      ) : null}
     </div>
   )
 }
