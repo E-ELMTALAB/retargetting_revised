@@ -37,6 +37,7 @@ export default function AnalyticsDashboard({ accountId, sessionId }) {
   const [chatStats, setChatStats] = useState({ total: 0, growth: 0 })
   const [updating, setUpdating] = useState(false)
   const [updateId, setUpdateId] = useState(() => localStorage.getItem('categoryUpdateId'))
+  const [categoryUpdateCampaign, setCategoryUpdateCampaign] = useState(null)
   const navigate = useNavigate()
 
   const fetchData = async () => {
@@ -137,6 +138,37 @@ export default function AnalyticsDashboard({ accountId, sessionId }) {
     fetchData()
   }, [accountId, sessionId])
 
+  // Fetch category update campaign status
+  const fetchCategoryUpdateCampaign = async () => {
+    if (!accountId) return
+    try {
+      const resp = await fetch(`${API_BASE}/campaigns?account_id=${accountId}`)
+      const data = await resp.json()
+      const camps = (data.campaigns || []).map(c => {
+        let f = {}
+        try { f = c.filters_json ? JSON.parse(c.filters_json) : {} } catch {}
+        return { ...c, categoryUpdate: !!f.categorize_only }
+      })
+      const catUpdate = camps.find(c => c.categoryUpdate && c.status === 'running')
+      setCategoryUpdateCampaign(catUpdate || null)
+      if (catUpdate) {
+        setUpdateId(String(catUpdate.id))
+        localStorage.setItem('categoryUpdateId', String(catUpdate.id))
+      } else {
+        setUpdateId(null)
+        localStorage.removeItem('categoryUpdateId')
+      }
+    } catch (e) {
+      console.error('fetch campaigns', e)
+    }
+  }
+
+  useEffect(() => {
+    fetchCategoryUpdateCampaign()
+    const interval = setInterval(fetchCategoryUpdateCampaign, 3000)
+    return () => clearInterval(interval)
+  }, [accountId])
+
   useEffect(() => {
     if (!accountId) return
     fetch(`${API_BASE}/campaigns?account_id=${accountId}`)
@@ -206,7 +238,7 @@ export default function AnalyticsDashboard({ accountId, sessionId }) {
           <p className="text-sm">Total Users: {chatStats.total}</p>
           <p className="text-sm">Growth Since Last: {chatStats.growth}</p>
         </div>
-        {updateId ? (
+        {categoryUpdateCampaign ? (
           <div className="flex items-center gap-2">
             <span className="px-3 py-1 bg-purple-600 text-white rounded text-sm">Running</span>
             <button
@@ -218,11 +250,31 @@ export default function AnalyticsDashboard({ accountId, sessionId }) {
           </div>
         ) : (
           <button
-            onClick={runUpdate}
+            onClick={async () => {
+              setUpdating(true)
+              try {
+                const resp = await fetch(`${API_BASE}/analytics/update`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ account_id: accountId, telegram_session_id: sessionId })
+                })
+                const data = await resp.json()
+                if (resp.ok && data.campaign_id) {
+                  setUpdateId(String(data.campaign_id))
+                  setCategoryUpdateCampaign({ id: data.campaign_id, status: 'running', categoryUpdate: true })
+                  localStorage.setItem('categoryUpdateId', String(data.campaign_id))
+                }
+                fetchData()
+              } catch (e) {
+                console.error('update error', e)
+              } finally {
+                setUpdating(false)
+              }
+            }}
             className="px-3 py-1 bg-blue-600 text-white rounded"
             disabled={updating}
           >
-            {updating ? 'Starting...' : 'Update'}
+            {updating ? 'Starting...' : 'Update Category'}
           </button>
         )}
       </div>
